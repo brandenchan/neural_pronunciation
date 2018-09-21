@@ -5,6 +5,7 @@ import tensorflow as tf
 PAD_CODE = 0
 START_TOKEN = "<START>"
 END_TOKEN = "<END>"
+END_CODE = 2
 
 class JointIterator:
     def __init__(self, iter_x, iter_y, time_major=True, auto_reset=True):

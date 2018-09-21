@@ -9,6 +9,7 @@ import numpy as np
 
 from data_handling import (convert_list, joint_iterator_from_file, load_maps,
                            load_symbols, convert_word)
+from evaluation import evaluate
 
 
 class CharToPhonModel:
@@ -190,13 +191,14 @@ class CharToPhonModel:
 
             self.num_predictions = tf.count_nonzero(self.sequence_mask, dtype=tf.float32)
 
-            self.train_loss = (tf.reduce_sum(self.crossent * self.sequence_mask) /
-                                self.num_predictions)
+            self.losses = tf.reduce_mean(self.crossent * self.sequence_mask, axis=0)
+
+            self.batch_loss = tf.reduce_mean(self.losses)
 
     def gradient_update(self):
         # Calculate and clip gradients
         params = tf.trainable_variables()
-        gradients = tf.gradients(self.train_loss, params)
+        gradients = tf.gradients(self.batch_loss, params)
         clipped_gradients, _ = tf.clip_by_global_norm(
                                 gradients, self.max_gradient_norm)
 
@@ -227,12 +229,11 @@ class CharToPhonModel:
         else:
             print("\tUnidirectional encoder")
         if self.debug:
-            print("\DEBUG MODE")
+            print("\tDEBUG MODE")
         print("\tTraining {} examples over {} batches of {} ({} epochs)\n".format(self.n_train_data,
                                                                               self.n_batches,
                                                                               self.batch_size,
                                                                               int(n_to_process / self.n_train_data)))
-
 
         with tf.Session() as sess:
             # Setup of output directory
@@ -255,6 +256,8 @@ class CharToPhonModel:
         completed_batches = 0
         train_loss_track = []
         dev_loss_track = []
+        dev_accuracy_track = []
+        dev_similarity_track = []
 
         for completed_batches in range(self.n_batches):
 
@@ -269,33 +272,27 @@ class CharToPhonModel:
                     self.decoder_input_lengths: Y_lens,
                     self.decoder_target_lengths: Y_lens}
 
-            _, loss, prediction = sess.run([self.train_op, self.train_loss, self.predictions_arpa], fd)
+            _, loss = sess.run([self.train_op, self.batch_loss], fd)
             train_loss_track.append(loss)
 
             # Printing, validation and saving
             if completed_batches != 0:
                 epoch = (self.batch_size * completed_batches) // self.n_train_data
-                if completed_batches % self.validate_every == 0:
-                    dev_loss = self.validation(sess)
-                    dev_loss_track.append(dev_loss)
-                    print("Batch {} / {} Epoch {} dev: {}".format(completed_batches, self.n_batches, epoch, dev_loss))
                 if completed_batches % self.print_every == 0:
                     t_loss = np.mean(train_loss_track[-100:])
                     print("Batch {} / {} Epoch {} train: {}".format(completed_batches, self.n_batches, epoch, t_loss))
+                if completed_batches % self.validate_every == 0:
+                    self.sample_inference(sess)
+                    dev_loss, dev_accuracy, dev_similarity = self.dev_validation(sess)
+
+                    dev_loss_track.append(dev_loss)
+                    dev_accuracy_track.append(dev_accuracy)
+                    dev_similarity_track.append(dev_similarity)
                 if completed_batches % self.save_every == 0:
                     save_path = self.saver.save(sess, self.save_dir + "model.ckpt")
                     print("Model saved in path: {}\n".format(save_path))
 
-
-
             # every X amount of batches: save train and dev loss, save check point, do dev
-
-    def validation(self, sess):
-        print()
-        self.sample_inference(sess)
-        print()
-        dev_loss = self.dev_validation(sess)
-        return dev_loss
 
     def sample_inference(self, sess):
         X, Y_in, Y_targ, X_lens, Y_lens = self.sample
@@ -307,12 +304,15 @@ class CharToPhonModel:
                 self.decoder_target_lengths: Y_lens}
         prediction, = sess.run([self.predictions_arpa], fd)
         print_prediction(X, prediction, self.code_to_chars, self.code_to_arpa)
-        evaluate(Y_targ, prediction)
-
 
     def dev_validation(self, sess):
+        print()
+        print("DEV VALIDATION")
+        print("=" * 20)
+        print()
         self.iter_dev.reset()
         all_losses = []
+        all_sim = []
         while True:
             batch = self.iter_dev.next(self.batch_size)
             
@@ -328,12 +328,18 @@ class CharToPhonModel:
                     self.encoder_input_lengths: X_lens,
                     self.decoder_input_lengths: Y_lens,
                     self.decoder_target_lengths: Y_lens}
-            loss, = sess.run([self.train_loss], fd)
-            all_losses.append(loss)
-        return np.mean(all_losses)
+            losses, prediction = sess.run([self.losses, self.predictions_arpa], fd)
+            similarity_scores = evaluate(Y_targ, prediction)
 
-
-
+            all_sim += similarity_scores
+            all_losses += list(losses)
+        dev_loss = np.mean(all_losses)
+        accuracy, similarity = dev_stats(all_sim)
+        print("Loss:       {}".format(dev_loss))
+        print("Accuracy:   {}".format(accuracy))
+        print("Similarity: {}".format(similarity))
+        print()
+        return dev_loss, accuracy, similarity
 
 def save_hyperparams(model, filename="hyperparameters.txt"):
     hyperparams = vars(model)
@@ -374,6 +380,10 @@ def print_sample(sample, code_to_chars, code_to_arpa):
     print()
 
 def print_prediction(X, prediction, code_to_chars, code_to_arpa):
+    print()
+    print("SAMPLE INFERENCE")
+    print("=" * 20)
+    print()
     zipped = zip(X.T, prediction.T)
     for s, p in zipped:
         spelling_raw = convert_word(s, code_to_chars)
@@ -381,10 +391,11 @@ def print_prediction(X, prediction, code_to_chars, code_to_arpa):
         arpa_raw = convert_word(p, code_to_arpa)
         arpa = " ".join([ar for ar in arpa_raw if "<" not in ar])
         print("{} - {}".format(spelling, arpa))
+    print()
 
-def evaluate(target, prediction):
-    zipped = zip(target, prediction)
-    for a, b in zipped:
-        print(a)
+def dev_stats(similarity_scores):
+    accuracy = similarity_scores.count(1) / len(similarity_scores)
+    sim = np.mean(similarity_scores)
+    return accuracy, sim
 
 CharToPhonModel().train()
