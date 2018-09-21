@@ -25,14 +25,14 @@ class CharToPhonModel:
                 bidir=True,
                 cell_class=LSTMCell,
                 max_gradient_norm=1,
-                learning_rate=0.0001,
+                learning_rate=0.001,
                 save_dir="output_1/",
                 resume_dir=None,
-                n_batches=10000,
-                debug=True,
+                n_batches=10001,
+                debug=False,
                 sample_size=20,
                 print_every=50,
-                validate_every=1000
+                validate_every=500
                 ):
 
         self.data_dir = data_dir
@@ -401,4 +401,5 @@ def dev_stats(similarity_scores):
     sim = np.mean(similarity_scores)
     return accuracy, sim
 
-CharToPhonModel().train()
+if __name__ == "__main__":
+    CharToPhonModel().train()
