@@ -19,9 +19,9 @@ class CharToPhonModel:
     """ Class that handles training and inference of LSTM model """
     def __init__(self,
                 data_dir="data/",
-                batch_size=3,
-                embed_dims=200,
-                hidden_dims=200,
+                batch_size=128,
+                embed_dims=300,
+                hidden_dims=300,
                 bidir=True,
                 cell_class=LSTMCell,
                 max_gradient_norm=1,
@@ -29,10 +29,10 @@ class CharToPhonModel:
                 save_dir="output_1/",
                 resume_dir=None,
                 n_batches=10000,
-                debug=False,
+                debug=True,
                 sample_size=20,
                 print_every=50,
-                validate_every=200
+                validate_every=1000
                 ):
 
         self.data_dir = data_dir
@@ -181,6 +181,8 @@ class CharToPhonModel:
                                                     impute_finished=True)
 
             self.logits = outputs.rnn_output
+
+            # Transposed so that not time major
             self.predictions_arpa = tf.transpose(tf.argmax(self.logits, 2))
 
     def compute_loss(self):
@@ -221,7 +223,7 @@ class CharToPhonModel:
         self.iter_dev = joint_iterator_from_file(dev_file, auto_reset=False)
         self.n_train_data = self.iter_train.len
 
-        # Sample of data
+        # Sample of data (time_major=True)
         self.sample = self.iter_train.next(self.sample_size)
         print_sample(self.sample, self.code_to_chars, self.code_to_arpa)
 
@@ -266,7 +268,6 @@ class CharToPhonModel:
 
             # Get batch of data and perform training
             X, Y_in, Y_targ, X_lens, Y_lens = self.iter_train.next(self.batch_size)
-            # X, Y_in, Y_targ, X_lens, Y_lens = self.sample
 
             fd = {self.encoder_inputs: X,
                     self.decoder_inputs: Y_in,
@@ -287,7 +288,6 @@ class CharToPhonModel:
                 if completed_batches % self.validate_every == 0:
                     self.sample_inference(sess)
                     dev_loss, dev_accuracy, dev_similarity = self.dev_validation(sess)
-
                     dev_loss_track.append(dev_loss)
                     dev_accuracy_track.append(dev_accuracy)
                     dev_similarity_track.append(dev_similarity)
@@ -306,7 +306,7 @@ class CharToPhonModel:
                 self.decoder_input_lengths: Y_lens,
                 self.decoder_target_lengths: Y_lens}
         prediction, = sess.run([self.predictions_arpa], fd)
-        print_prediction(X, prediction, self.code_to_chars, self.code_to_arpa)
+        print_prediction(X.T, prediction, self.code_to_chars, self.code_to_arpa)
 
     def dev_validation(self, sess):
         print()
@@ -332,7 +332,7 @@ class CharToPhonModel:
                     self.decoder_input_lengths: Y_lens,
                     self.decoder_target_lengths: Y_lens}
             losses, prediction = sess.run([self.losses, self.predictions_arpa], fd)
-            similarity_scores = evaluate(Y_targ, prediction)
+            similarity_scores = evaluate(Y_targ.T, prediction)
 
             all_sim += similarity_scores
             all_losses += list(losses)
@@ -387,7 +387,7 @@ def print_prediction(X, prediction, code_to_chars, code_to_arpa):
     print("SAMPLE INFERENCE")
     print("=" * 20)
     print()
-    zipped = zip(X.T, prediction.T)
+    zipped = zip(X, prediction)
     for s, p in zipped:
         spelling_raw = convert_word(s, code_to_chars)
         spelling = "".join([ch for ch in spelling_raw if "<" not in ch])
