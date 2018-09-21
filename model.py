@@ -3,7 +3,10 @@ import shutil
 from pprint import pprint
 
 import tensorflow as tf
-from tensorflow.nn.rnn_cell import LSTMCell, LSTMStateTuple
+try:
+    from tensorflow.nn.rnn_cell import LSTMCell, LSTMStateTuple
+except ModuleNotFoundError:
+    from tensorflow.contrib.rnn import LSTMCell, LSTMStateTuple
 import numpy as np
 
 
@@ -26,7 +29,7 @@ class CharToPhonModel:
                 save_dir="output_1/",
                 resume_dir=None,
                 n_batches=10000,
-                debug=True,
+                debug=False,
                 sample_size=20,
                 print_every=50,
                 validate_every=200
