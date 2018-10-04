@@ -67,19 +67,19 @@ class CharToPhonModel:
             placeholders= self.setup_placeholders(mode)
 
             encoder_final_state = self.build_encoder(placeholders["encoder_inputs"],
-                                                     placeholders["encoder_input_lengths"])
+                                                    placeholders["encoder_input_lengths"])
 
             logits, predictions_arpa = self.build_decoder(mode,
-                                                          encoder_final_state, 
-                                                          placeholders["decoder_inputs"],
-                                                          placeholders["decoder_targets"],
-                                                          placeholders["decoder_lengths"],
-                                                          placeholders["encoder_input_lengths"])
+                                                        encoder_final_state, 
+                                                        placeholders["decoder_inputs"],
+                                                        placeholders["decoder_targets"],
+                                                        placeholders["decoder_lengths"],
+                                                        placeholders["encoder_input_lengths"])
 
             losses, batch_loss = self.compute_loss(mode,
-                                                   logits,
-                                                   placeholders["decoder_targets"],
-                                                   placeholders["decoder_lengths"])
+                                                logits,
+                                                placeholders["decoder_targets"],
+                                                placeholders["decoder_lengths"])
 
             train_op = self.gradient_update(batch_loss)
 
@@ -337,15 +337,17 @@ class CharToPhonModel:
                 else:
                     with graph_train.as_default():
                         sess_train.run(tf.global_variables_initializer())
-                        print("ASDFASDF")
                     with graph_inf.as_default():
                         sess_inf.run(tf.global_variables_initializer())
 
                 for completed_batches in range(self.n_batches):
                     # Get batch of data and perform training
                     batch = self.iter_train.next(self.batch_size)
-
+                    
                     fd = create_feed_dict(ph_train, batch)
+                    print(fd)
+                    print()
+                    print()
 
                     _, batch_loss = sess_train.run([out_node_train["train_op"], out_node_train["batch_loss"]], fd)
                     train_loss_track.append(batch_loss)

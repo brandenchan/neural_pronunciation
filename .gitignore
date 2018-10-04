@@ -6,3 +6,4 @@ output*
 *.pyc
 .DS_Store
 data/
+multimodel.py
