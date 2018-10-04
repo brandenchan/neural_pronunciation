@@ -21,8 +21,8 @@ class JointIterator:
         Y_raw = self.iter_y.next(num)
         if not X_raw and not Y_raw:
             return None
-        X_lens = np.asarray([len(seq) for seq in X_raw])
-        Y_lens = np.asarray([len(seq) for seq in Y_raw]) - 1
+        len_X = np.asarray([len(seq) for seq in X_raw])
+        len_Y = np.asarray([len(seq) for seq in Y_raw]) - 1
         Y = pad(Y_raw)
         X = pad(X_raw)
         Y_in = np.asarray(Y)[:, :-1]
@@ -38,7 +38,11 @@ class JointIterator:
             Y_in = Y_in.T
             Y_targ = Y_targ.T
 
-        return X, Y_in, Y_targ, X_lens, Y_lens
+        return {"X": X,
+                "Y_in": Y_in,
+                "Y_targ": Y_targ,
+                "len_X": len_X,
+                "len_Y": len_Y}
 
     def reset(self):
         self.iter_x.reset()
