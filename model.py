@@ -1,6 +1,7 @@
 import os
 import shutil
 from pprint import pprint
+import pickle
 
 import tensorflow as tf
 try:
@@ -56,44 +57,41 @@ class CharToPhonModel:
         self.debug = debug
         self.sample_size = sample_size
         self.print_every = print_every
-        self.validate_every = validate_every
+        self.save_every = validate_every
 
 
-    def build_graph(self, mode):
-        assert mode in ["train", "inference"]
-        graph = tf.Graph()
-        with graph.as_default():
+    def build_graph(self):
+        tf.reset_default_graph()
+        placeholders = self.setup_placeholders()
 
-            placeholders= self.setup_placeholders(mode)
+        encoder_final_state = self.build_encoder(placeholders["encoder_inputs"],
+                                                placeholders["encoder_input_lengths"])
 
-            encoder_final_state = self.build_encoder(placeholders["encoder_inputs"],
-                                                    placeholders["encoder_input_lengths"])
-
-            logits, predictions_arpa = self.build_decoder(mode,
-                                                        encoder_final_state, 
+        logits, predictions_arpa = self.build_decoder(encoder_final_state, 
                                                         placeholders["decoder_inputs"],
                                                         placeholders["decoder_targets"],
                                                         placeholders["decoder_lengths"],
                                                         placeholders["encoder_input_lengths"])
 
-            losses, batch_loss = self.compute_loss(mode,
-                                                logits,
-                                                placeholders["decoder_targets"],
-                                                placeholders["decoder_lengths"])
+        if self.mode == "inference":
 
+            output_nodes = {"predictions_arpa": predictions_arpa}
+
+        if self.mode == "train":
+
+            losses, batch_loss = self.compute_loss(logits,
+                                                    placeholders["decoder_targets"],
+                                                    placeholders["decoder_lengths"])
             train_op = self.gradient_update(batch_loss)
-
             output_nodes = {"train_op": train_op, 
                             "batch_loss": batch_loss, 
                             "losses": losses,
                             "predictions_arpa": predictions_arpa}
 
-            saver = tf.train.Saver()
-
-            return graph, placeholders, output_nodes, saver
+        return placeholders, output_nodes
 
 
-    def setup_placeholders(self, mode):
+    def setup_placeholders(self):
         with tf.variable_scope("variables"):
 
             # inputs of shape [encoder_max_time, batch_size]
@@ -118,8 +116,8 @@ class CharToPhonModel:
 
             # sequence lengths of shape [batch_size]
             decoder_lengths = tf.placeholder(shape=(None,),
-                                                    dtype=tf.int32,
-                                                    name='decoder_lengths')
+                                             dtype=tf.int32,
+                                             name='decoder_lengths')
  
             return {"encoder_inputs": encoder_inputs, 
                     "encoder_input_lengths": encoder_input_lengths,
@@ -178,7 +176,7 @@ class CharToPhonModel:
             return encoder_final_state
 
 
-    def build_decoder(self, mode, encoder_final_state,
+    def build_decoder(self, encoder_final_state,
                       decoder_inputs, decoder_targets,
                       decoder_lengths, encoder_input_lengths):
 
@@ -198,12 +196,12 @@ class CharToPhonModel:
                 decoder_dims *= 2
             decoder_cell = self.cell_class(decoder_dims)
 
-            if mode == "train":
+            if self.mode == "train":
                 helper = tf.contrib.seq2seq.TrainingHelper(
                                 inputs=decoder_input_embeddings, 
                                 sequence_length=decoder_lengths,
                                 time_major=True)
-            elif mode == "inference":
+            elif self.mode == "inference":
                 start_tokens = tf.fill([self.batch_size], START_CODE)
                 helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
                             arpa_embeddings,
@@ -232,21 +230,9 @@ class CharToPhonModel:
             return logits, predictions_arpa
 
 
-    def compute_loss(self, mode, logits, decoder_targets, decoder_lengths):
+    def compute_loss(self, logits, decoder_targets, decoder_lengths):
 
         with tf.variable_scope("loss_computation"):
-
-            # We need logits to match shape of decoder targets
-            if mode == "inference":
-                
-                max_time_steps = tf.reduce_max(decoder_lengths)
-                logit_steps = tf.shape(logits)[0]
-                logits = logits[:max_time_steps]
-                diff = tf.maximum(max_time_steps - logit_steps, 0)
-                paddings = tf.Variable([[0, diff], [0, 0], [0,0]])
-                logits = tf.pad(logits, paddings, "CONSTANT")
-
-
 
             crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(
                                         labels=decoder_targets, logits=logits)
@@ -276,8 +262,10 @@ class CharToPhonModel:
         return train_op
 
     def train(self):
+        self.mode = "train"
         self.train_setup()
-        self.train_loop()
+        loss_track = self.train_loop()
+        pickle.dump(loss_track, open(self.save_dir + "train_loss_track.pkl", "wb"))
 
     def train_setup(self):
         
@@ -287,17 +275,14 @@ class CharToPhonModel:
         # Load data
         train_file = self.data_dir + "train"
         sample_file = self.data_dir + "sample"
-        dev_file = self.data_dir + "dev"
         if self.debug:
             train_file += "_debug"
-            dev_file += "_debug"
         self.iter_train = joint_iterator_from_file(train_file, auto_reset=True)
-        self.iter_dev = joint_iterator_from_file(dev_file, auto_reset=False)
         self.iter_sample = joint_iterator_from_file(sample_file, auto_reset=False)
         self.n_train_data = self.iter_train.len
 
         # Sample of data (time_major=True)
-        # print_sample(self.iter_sample, self.code_to_chars, self.code_to_arpa)
+        print_sample(self.iter_sample, self.code_to_chars, self.code_to_arpa)
 
         # Print header
         print("\nTRAINING\n" + "="*20)
@@ -317,60 +302,94 @@ class CharToPhonModel:
 
         completed_batches = 0
         train_loss_track = []
-        dev_loss_track = []
-        dev_accuracy_track = []
-        dev_similarity_track = []
 
+        placeholders, out_nodes  = self.build_graph()
+        saver = tf.train.Saver()
 
-        # Two graphs and sessions are initialized so that validation can
-        # be performed during training. Inference graph is updated by
-        # loading model checkpoints
-        graph_train, ph_train, out_node_train, saver_train  = self.build_graph("train")
-        graph_inf, ph_inf, out_node_inf, saver_inf = self.build_graph("inference")
-
-        with tf.Session(graph=graph_train) as sess_train:
-            with tf.Session(graph=graph_inf) as sess_inf:
+        with tf.Session() as sess_train:
 
                 # Restore or initialize variables 
-                if self.resume_dir:
-                    saver_train.restore(sess_train, self.resume_dir + "model.ckpt")
-                else:
-                    with graph_train.as_default():
-                        sess_train.run(tf.global_variables_initializer())
-                    with graph_inf.as_default():
-                        sess_inf.run(tf.global_variables_initializer())
+                # if self.resume_dir:
+                #     saver.restore(sess_train, self.resume_dir + "model.ckpt")
+                # else:
+                sess_train.run(tf.global_variables_initializer())
+                    
 
                 for completed_batches in range(self.n_batches):
                     # Get batch of data and perform training
                     batch = self.iter_train.next(self.batch_size)
                     
-                    fd = create_feed_dict(ph_train, batch)
-                    print(fd)
-                    print()
-                    print()
+                    fd = create_feed_dict(placeholders, batch)
 
-                    _, batch_loss = sess_train.run([out_node_train["train_op"], out_node_train["batch_loss"]], fd)
+                    _, batch_loss = sess_train.run([out_nodes["train_op"], out_nodes["batch_loss"]], fd)
                     train_loss_track.append(batch_loss)
 
-                    # Printing, validation and saving
+                    # Printing and saving
                     if completed_batches != 0:
                         epoch = (self.batch_size * completed_batches) // self.n_train_data
                         if completed_batches % self.print_every == 0:
                             t_loss = np.mean(train_loss_track[-100:])
                             print("Batch {} / {} Epoch {} train: {}".format(completed_batches, self.n_batches, epoch, t_loss))
-                        if completed_batches % self.validate_every == 0:
-                            save_path = saver_train.save(sess_train, self.save_dir + "model.ckpt")
-                            print("Model saved in path: {}\n".format(save_path))
-                            saver_inf.restore(sess_inf, save_path)
-                            # self.sample_inference(ph_inf,
-                            #                       out_node_inf,
-                            #                       sess_inf)
-                            dev_loss, dev_accuracy, dev_similarity = self.dev_validation(ph_inf,
-                                                                                         out_node_inf,
-                                                                                         sess_inf)
-                            dev_loss_track.append(dev_loss)
-                            dev_accuracy_track.append(dev_accuracy)
-                            dev_similarity_track.append(dev_similarity)
+                        if completed_batches % self.save_every == 0:
+                            save_path = saver.save(sess_train, self.save_dir + "model.ckpt.{}".format(completed_batches))
+                            print("Model saved in path: {}".format(save_path))
+        return train_loss_track
+
+    def inference(self):
+        ckpt_batch_idx = self.inference_setup()
+        self.inference_loop(ckpt_batch_idx)
+
+    def inference_setup(self):
+        self.mode = "inference"
+        dev_file = self.data_dir + "dev"
+        if self.debug:
+            dev_file += "_debug"
+        self.iter_dev = joint_iterator_from_file(dev_file, auto_reset=False)
+        ckpt_files = [f for f in os.listdir(self.save_dir) if "model.ckpt" in f]
+        ckpt_batch_idx = sorted(set(int(f.split(".")[2]) for f in ckpt_files))
+        return ckpt_batch_idx
+
+    def inference_loop(self, ckpt_batch_idx):
+        for idx in ckpt_batch_idx:
+            print("VALIDATION AFTER {} BATCHES".format(idx))
+            all_sim = []
+
+            placeholders, out_nodes = self.build_graph()
+
+            with tf.Session() as sess:
+
+                saver = tf.train.Saver()
+                saver.restore(sess, self.save_dir + "model.ckpt.{}".format(idx))
+
+                while True:
+                    batch = self.iter_dev.next(self.batch_size)  
+                    # at the end of the dev epoch
+                    if not batch:
+                        break
+                    diff = self.batch_size - batch["X"].shape[0]
+                    if diff:
+                        batch = extend_batch(batch, self.batch_size)
+
+                    fd = create_feed_dict(placeholders, batch)
+
+                    prediction, = sess.run([out_nodes["predictions_arpa"]], fd)
+                    similarity_scores = evaluate(batch["Y_targ"].T, prediction)
+                    similarity_scores = similarity_scores[:-diff]
+
+                    all_sim += similarity_scores
+                self.iter_dev.reset()
+
+                accuracy, similarity = dev_stats(all_sim)
+                print("Accuracy:   {}".format(accuracy))
+                print("Similarity: {}".format(similarity))
+                print()
+
+
+
+            
+
+
+
 
     def sample_inference(self, placeholders, prediction_node, sess):
         predictions = []
@@ -392,35 +411,6 @@ class CharToPhonModel:
                          self.code_to_chars, 
                          self.code_to_arpa)
 
-    def dev_validation(self, placeholders, prediction_node, sess):
-        print()
-        print("DEV VALIDATION")
-        print("=" * 20)
-        print()
-        self.iter_dev.reset()
-        all_losses = []
-        all_sim = []
-        n = 0
-        while True:
-            batch = self.iter_dev.next(self.batch_size)
-            n += self.batch_size
-            if not batch:
-                # i.e. at the end of the dev epoch
-                break
-
-            fd = create_feed_dict(placeholders, batch)
-            losses, prediction = sess.run([prediction_node["losses"], prediction_node["predictions_arpa"]], fd)
-            similarity_scores = evaluate(batch["Y_targ"].T, prediction)
-
-            all_sim += similarity_scores
-            all_losses += list(losses)
-        dev_loss = np.mean(all_losses)
-        accuracy, similarity = dev_stats(all_sim)
-        print("Loss:       {}".format(dev_loss))
-        print("Accuracy:   {}".format(accuracy))
-        print("Similarity: {}".format(similarity))
-        print()
-        return dev_loss, accuracy, similarity
 
     def save_hyperparams(self, filename="hyperparameters.txt"):
         hyperparams = vars(self)
@@ -516,4 +506,4 @@ def extend_dim_one(array, new_size):
 
 
 if __name__ == "__main__":
-    CharToPhonModel().train()
+    CharToPhonModel().inference()

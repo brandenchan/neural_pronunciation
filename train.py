@@ -1,4 +1,8 @@
 class Training:
+    def __init__():
+
+
+    
     train_model
     inference_model
     # How does the loop work???
@@ -7,3 +11,8 @@ class Training:
     inference_model.load()
     inference_model.validate()
 
+class TrainModel:
+    pass
+
+class InfModel:
+    pass
