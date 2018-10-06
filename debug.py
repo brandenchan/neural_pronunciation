@@ -1,7 +1,7 @@
 from model import CharToPhonModel
 
 m = CharToPhonModel(data_dir="data/",
-                batch_size=4,
+                batch_size=8,
                 embed_dims=100,
                 hidden_dims=100,
                 bidir=True,
@@ -10,10 +10,9 @@ m = CharToPhonModel(data_dir="data/",
                 learning_rate=0.001,
                 save_dir="output_1/",
                 resume_dir=None,
-                n_batches=201,
-                debug=True,
-                sample_size=20,
-                print_every=50,
+                n_batches=1001,
+                debug=False,
+                print_every=10,
                 validate_every=100
                 )
 

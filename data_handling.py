@@ -29,20 +29,24 @@ class JointIterator:
         Y_targ = np.asarray(Y)[:, 1:]
         X = np.stack(X)
 
-
-        # Y_in = np.stack(Y_in)
-        # Y_targ = np.stack(Y_targ)
+        diff = num - X.shape[0]
 
         if self.time_major:
             X = X.T
             Y_in = Y_in.T
             Y_targ = Y_targ.T
 
-        return {"X": X,
+        batch = {"X": X,
                 "Y_in": Y_in,
                 "Y_targ": Y_targ,
                 "len_X": len_X,
                 "len_Y": len_Y}
+
+        # If a batch is fetched with less examples than num
+        if diff:
+            batch = extend_batch(batch, num)
+
+        return batch, diff
 
     def reset(self):
         self.iter_x.reset()
@@ -141,3 +145,25 @@ def create_map(symbols):
     code_to_sym = {i : sym for i, sym in enumerate(symbols)}
     return sym_to_code, code_to_sym
 
+
+def extend_batch(batch, batch_size):
+    """ Fill batch with dummy examples so that it fits batch_size """
+    new_batch = {}
+    new_batch["X"] = extend_dim_one(batch["X"], batch_size)
+    new_batch["Y_in"] = extend_dim_one(batch["Y_in"], batch_size)
+    new_batch["Y_targ"] = extend_dim_one(batch["Y_targ"], batch_size)
+    new_batch["len_X"] = extend_dim_zero(batch["len_X"], batch_size)
+    new_batch["len_Y"] = extend_dim_zero(batch["len_Y"], batch_size)
+    return new_batch
+
+def extend_dim_zero(array, new_size):
+    x, = array.shape
+    ret = np.zeros((new_size))
+    ret[:x] = array
+    return ret
+
+def extend_dim_one(array, new_size):
+    x, y = array.shape
+    ret = np.zeros((x, new_size))
+    ret[:, :y] = array
+    return ret

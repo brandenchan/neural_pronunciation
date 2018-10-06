@@ -34,7 +34,6 @@ class CharToPhonModel:
                 resume_dir=None,
                 n_batches=10001,
                 debug=False,
-                sample_size=20,
                 print_every=50,
                 validate_every=500
                 ):
@@ -55,7 +54,6 @@ class CharToPhonModel:
         self.resume_dir = resume_dir
         self.n_batches = n_batches
         self.debug = debug
-        self.sample_size = sample_size
         self.print_every = print_every
         self.save_every = validate_every
 
@@ -304,24 +302,23 @@ class CharToPhonModel:
         train_loss_track = []
 
         placeholders, out_nodes  = self.build_graph()
-        saver = tf.train.Saver()
+        saver = tf.train.Saver(max_to_keep=0)
 
-        with tf.Session() as sess_train:
+        with tf.Session() as sess:
 
                 # Restore or initialize variables 
                 # if self.resume_dir:
-                #     saver.restore(sess_train, self.resume_dir + "model.ckpt")
+                #     saver.restore(sess, self.resume_dir + "model.ckpt")
                 # else:
-                sess_train.run(tf.global_variables_initializer())
+                sess.run(tf.global_variables_initializer())
                     
-
                 for completed_batches in range(self.n_batches):
                     # Get batch of data and perform training
-                    batch = self.iter_train.next(self.batch_size)
+                    batch, _ = self.iter_train.next(self.batch_size)
                     
                     fd = create_feed_dict(placeholders, batch)
 
-                    _, batch_loss = sess_train.run([out_nodes["train_op"], out_nodes["batch_loss"]], fd)
+                    _, batch_loss = sess.run([out_nodes["train_op"], out_nodes["batch_loss"]], fd)
                     train_loss_track.append(batch_loss)
 
                     # Printing and saving
@@ -331,7 +328,12 @@ class CharToPhonModel:
                             t_loss = np.mean(train_loss_track[-100:])
                             print("Batch {} / {} Epoch {} train: {}".format(completed_batches, self.n_batches, epoch, t_loss))
                         if completed_batches % self.save_every == 0:
-                            save_path = saver.save(sess_train, self.save_dir + "model.ckpt.{}".format(completed_batches))
+                            sample_predictions = self.sample_inference(placeholders, out_nodes, sess)
+                            with open(self.save_dir + "results/train_sample", "a") as out_file:
+                                out_file.write("After {} batches\n{}\n{}\n".format(completed_batches, 
+                                                                                    "="*20,
+                                                                                    sample_predictions))
+                            save_path = saver.save(sess, self.save_dir + "model.ckpt.{}".format(completed_batches))
                             print("Model saved in path: {}".format(save_path))
         return train_loss_track
 
@@ -351,7 +353,7 @@ class CharToPhonModel:
 
     def inference_loop(self, ckpt_batch_idx):
         for idx in ckpt_batch_idx:
-            print("VALIDATION AFTER {} BATCHES".format(idx))
+            print("\nVALIDATION AFTER {} BATCHES".format(idx))
             all_sim = []
 
             placeholders, out_nodes = self.build_graph()
@@ -362,22 +364,27 @@ class CharToPhonModel:
                 saver.restore(sess, self.save_dir + "model.ckpt.{}".format(idx))
 
                 while True:
-                    batch = self.iter_dev.next(self.batch_size)  
+                    batch_n_fake = self.iter_dev.next(self.batch_size)  
                     # at the end of the dev epoch
-                    if not batch:
+                    if not batch_n_fake:
                         break
-                    diff = self.batch_size - batch["X"].shape[0]
-                    if diff:
-                        batch = extend_batch(batch, self.batch_size)
+                    batch, n_fake = batch_n_fake
 
                     fd = create_feed_dict(placeholders, batch)
 
                     prediction, = sess.run([out_nodes["predictions_arpa"]], fd)
                     similarity_scores = evaluate(batch["Y_targ"].T, prediction)
-                    similarity_scores = similarity_scores[:-diff]
+                    similarity_scores = similarity_scores[:-n_fake]
 
                     all_sim += similarity_scores
                 self.iter_dev.reset()
+
+                sample_predictions = self.sample_inference(placeholders, out_nodes, sess)
+                with open(self.save_dir + "results/dev_sample", "a") as out_file:
+
+                    out_file.write("After {} batches\n{}\n{}\n".format(idx, 
+                                                                                    "="*20,
+                                                                                    sample_predictions))
 
                 accuracy, similarity = dev_stats(all_sim)
                 print("Accuracy:   {}".format(accuracy))
@@ -385,32 +392,34 @@ class CharToPhonModel:
                 print()
 
 
-
-            
-
-
-
-
-    def sample_inference(self, placeholders, prediction_node, sess):
+    def sample_inference(self, placeholders, nodes, sess):
         predictions = []
         Xs = []
         while True:
-            sample = self.iter_sample.next(self.batch_size)
-            if sample is None:
+            sample_n_fake = self.iter_sample.next(self.batch_size)
+            
+            if sample_n_fake is None:
                 break
+            sample, n_fake = sample_n_fake
+
             fd = create_feed_dict(placeholders, sample)
-            prediction, = sess.run([prediction_node["predictions_arpa"]], fd)
-            predictions.append(prediction)
+            prediction, = sess.run([nodes["predictions_arpa"]], fd)
+
+            sample_X = sample["X"].T
+
+            if n_fake:
+                prediction = prediction[:-n_fake]
+                sample_X = sample_X[:-n_fake]
+
+            predictions += prediction.tolist()
+            Xs += sample_X.tolist()
+
         self.iter_sample.reset()
-        n_sample = self.iter_sample.len
-        X_in = Xs[:n_sample]
-        pred_in = np.stack(predictions)[0][:n_sample]
 
-        print_prediction(X_in,
-                         pred_in,
-                         self.code_to_chars, 
-                         self.code_to_arpa)
-
+        return format_prediction(Xs,
+                            predictions,
+                            self.code_to_chars, 
+                            self.code_to_arpa)
 
     def save_hyperparams(self, filename="hyperparameters.txt"):
         hyperparams = vars(self)
@@ -426,6 +435,7 @@ def check_save_dir(save_dir, resume_dir):
             if decision == "y":
                 shutil.rmtree(save_dir)
                 os.mkdir(save_dir)
+                os.mkdir(save_dir + "results")
                 break
             elif decision == "n":
                 raise Exception
@@ -435,7 +445,7 @@ def check_save_dir(save_dir, resume_dir):
 def print_sample(iter_sample, code_to_chars, code_to_arpa):
     print("\nSAMPLE OF DATA\n" + "="*20 + "\n")
 
-    sample = iter_sample.next(iter_sample.len)
+    sample, _ = iter_sample.next(iter_sample.len)
     iter_sample.reset()
 
     X = convert_list(sample["X"].T, code_to_chars)
@@ -452,21 +462,17 @@ def print_sample(iter_sample, code_to_chars, code_to_arpa):
         print()
     print()
 
-def print_prediction(X, prediction, code_to_chars, code_to_arpa):
+def format_prediction(X, prediction, code_to_chars, code_to_arpa):
     """ Prints coded inputs and predictions. Expects non time major"""
-    print()
-    print("SAMPLE INFERENCE")
-    print("=" * 20)
-    print()
+    ret = ""
     zipped = zip(X, prediction)
-    print(X)
     for s, p in zipped:
         spelling_raw = convert_word(s, code_to_chars)
         spelling = "".join([ch for ch in spelling_raw if "<" not in ch])
         arpa_raw = convert_word(p, code_to_arpa)
         arpa = " ".join([ar for ar in arpa_raw if "<" not in ar])
-        print("{} - {}".format(spelling, arpa))
-    print()
+        ret += "{} - {}\n".format(spelling, arpa)
+    return ret
 
 def dev_stats(similarity_scores):
     accuracy = similarity_scores.count(1) / len(similarity_scores)
@@ -480,28 +486,6 @@ def create_feed_dict(placeholders, batch):
             placeholders["decoder_targets"]: batch["Y_targ"],
             placeholders["encoder_input_lengths"]: batch["len_X"],
             placeholders["decoder_lengths"]: batch["len_Y"]}
-
-def extend_batch(batch, batch_size):
-    """ Fill batch with dummy examples so that it fits batch_size """
-    new_batch = {}
-    new_batch["X"] = extend_dim_one(batch["X"], batch_size)
-    new_batch["Y_in"] = extend_dim_one(batch["Y_in"], batch_size)
-    new_batch["Y_targ"] = extend_dim_one(batch["Y_targ"], batch_size)
-    new_batch["len_X"] = extend_dim_zero(batch["len_X"], batch_size)
-    new_batch["len_Y"] = extend_dim_zero(batch["len_Y"], batch_size)
-    return new_batch
-
-def extend_dim_zero(array, new_size):
-    x, = array.shape
-    ret = np.zeros((new_size))
-    ret[:x] = array
-    return ret
-
-def extend_dim_one(array, new_size):
-    x, y = array.shape
-    ret = np.zeros((x, new_size))
-    ret[:, :y] = array
-    return ret
 
 
 
