@@ -1,5 +1,10 @@
 from difflib import SequenceMatcher
+import numpy as np
 
+def dev_stats(similarity_scores):
+    accuracy = similarity_scores.count(1) / len(similarity_scores)
+    sim = np.mean(similarity_scores)
+    return accuracy, sim
 
 def evaluate(A, B, end_code=2):
     

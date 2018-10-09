@@ -79,8 +79,11 @@ class DataIterator:
     def reset(self):
         self.iterator = iter(self.save)
 
-def joint_iterator_from_file(filename, auto_reset=True, time_major=True):
+def joint_iterator_from_file(filename, auto_reset=True, time_major=True, n=None):
     X, Y = load_cmu(filename)
+    if n:
+        X = X[:n]
+        Y = Y[:n]
     x_iter = DataIterator(X, auto_reset=auto_reset)
     y_iter = DataIterator(Y, auto_reset=auto_reset)
     return JointIterator(x_iter, y_iter, time_major=time_major)

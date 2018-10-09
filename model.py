@@ -13,7 +13,7 @@ import numpy as np
 
 from data_handling import (convert_list, joint_iterator_from_file, load_maps,
                            load_symbols, convert_word)
-from evaluation import evaluate
+from evaluation import dev_stats, evaluate
 
 PAD_CODE = 0
 START_CODE = 1
@@ -35,7 +35,8 @@ class CharToPhonModel:
                 n_batches=10001,
                 debug=False,
                 print_every=50,
-                validate_every=500
+                validate_every=500,
+                initializer = tf.glorot_normal_initializer
                 ):
 
         self.data_dir = data_dir
@@ -56,10 +57,16 @@ class CharToPhonModel:
         self.debug = debug
         self.print_every = print_every
         self.save_every = validate_every
+        self.initializer = tf.glorot_normal_initializer
+
+        sample_file = self.data_dir + "sample"
+        self.iter_sample = joint_iterator_from_file(sample_file, auto_reset=False)
 
 
     def build_graph(self):
         tf.reset_default_graph()
+        tf.get_variable_scope().set_initializer(self.initializer())
+
         placeholders = self.setup_placeholders()
 
         encoder_final_state = self.build_encoder(placeholders["encoder_inputs"],
@@ -272,11 +279,9 @@ class CharToPhonModel:
 
         # Load data
         train_file = self.data_dir + "train"
-        sample_file = self.data_dir + "sample"
         if self.debug:
             train_file += "_debug"
         self.iter_train = joint_iterator_from_file(train_file, auto_reset=True)
-        self.iter_sample = joint_iterator_from_file(sample_file, auto_reset=False)
         self.n_train_data = self.iter_train.len
 
         # Sample of data (time_major=True)
@@ -328,11 +333,7 @@ class CharToPhonModel:
                             t_loss = np.mean(train_loss_track[-100:])
                             print("Batch {} / {} Epoch {} train: {}".format(completed_batches, self.n_batches, epoch, t_loss))
                         if completed_batches % self.save_every == 0:
-                            sample_predictions = self.sample_inference(placeholders, out_nodes, sess)
-                            with open(self.save_dir + "results/train_sample", "a") as out_file:
-                                out_file.write("After {} batches\n{}\n{}\n".format(completed_batches, 
-                                                                                    "="*20,
-                                                                                    sample_predictions))
+                            self.sample_inference("train_sample", placeholders, out_nodes, completed_batches, sess)
                             save_path = saver.save(sess, self.save_dir + "model.ckpt.{}".format(completed_batches))
                             print("Model saved in path: {}".format(save_path))
         return train_loss_track
@@ -340,86 +341,105 @@ class CharToPhonModel:
     def inference(self):
         ckpt_batch_idx = self.inference_setup()
         self.inference_loop(ckpt_batch_idx)
+        create_graph()
 
     def inference_setup(self):
         self.mode = "inference"
         dev_file = self.data_dir + "dev"
+        train_slice_file = self.data_dir + "train"
         if self.debug:
             dev_file += "_debug"
         self.iter_dev = joint_iterator_from_file(dev_file, auto_reset=False)
+        self.iter_train_slice = joint_iterator_from_file(train_slice_file, auto_reset=False, n=self.iter_dev.len)
         ckpt_files = [f for f in os.listdir(self.save_dir) if "model.ckpt" in f]
         ckpt_batch_idx = sorted(set(int(f.split(".")[2]) for f in ckpt_files))
         return ckpt_batch_idx
 
     def inference_loop(self, ckpt_batch_idx):
+        iterators = {"Development": self.iter_dev,
+                     "Training": self.iter_train_slice}
+        results_filename = self.save_dir + "results/results.txt"
+        with open(results_filename, "a") as results_file:
+            results_file.write("batches\tdataset\tmetric\tvalue")
         for idx in ckpt_batch_idx:
             print("\nVALIDATION AFTER {} BATCHES".format(idx))
-            all_sim = []
+            for iterator_name in iterators:
+                print(iterator_name)
+                curr_iter = iterators[iterator_name]
+                all_sim = []
+                ckpt_file = self.save_dir + "model.ckpt.{}".format(idx)
 
-            placeholders, out_nodes = self.build_graph()
+                placeholders, out_nodes = self.build_graph()
 
-            with tf.Session() as sess:
+                with tf.Session() as sess:
+                    saver = tf.train.Saver()
+                    saver.restore(sess, ckpt_file)
+                    all_sim, _, _ = self.inference_one(curr_iter,
+                                                        placeholders,
+                                                        out_nodes,
+                                                        sess)
 
-                saver = tf.train.Saver()
-                saver.restore(sess, self.save_dir + "model.ckpt.{}".format(idx))
+                    accuracy, similarity = dev_stats(all_sim)
+                    print("Accuracy:   {}".format(accuracy))
+                    print("Similarity: {}".format(similarity))
+                    print()
 
-                while True:
-                    batch_n_fake = self.iter_dev.next(self.batch_size)  
-                    # at the end of the dev epoch
-                    if not batch_n_fake:
-                        break
-                    batch, n_fake = batch_n_fake
+                    acc_str = "{}\t{}\taccuracy\t{}\n".format(idx, iterator_name, accuracy)
+                    sim_str = "{}\t{}\tsimilarity\t{}\n".format(idx, iterator_name, similarity)
 
-                    fd = create_feed_dict(placeholders, batch)
+                    with open(results_filename) as results_file:
+                        results_file.write(acc_str)
+                        results_file.write(sim_str)
 
-                    prediction, = sess.run([out_nodes["predictions_arpa"]], fd)
-                    similarity_scores = evaluate(batch["Y_targ"].T, prediction)
-                    similarity_scores = similarity_scores[:-n_fake]
+                    self.sample_inference("dev_sample", placeholders, out_nodes, idx, sess)    
 
-                    all_sim += similarity_scores
-                self.iter_dev.reset()
+    def sample_inference(self, filename, placeholders, out_nodes, n_batches, sess):
+        _, sample_predictions, sample_X = self.inference_one(self.iter_sample,
+                                                            placeholders,
+                                                            out_nodes,
+                                                            sess)
+        sample_predictions_format = format_prediction(sample_X,
+                                                        sample_predictions,
+                                                        self.code_to_chars, 
+                                                        self.code_to_arpa)
+        with open(self.save_dir + "results/{}".format(filename), "a") as out_file:
+            out_file.write("After {} batches\n{}\n{}\n".format(n_batches, 
+                                                                "="*20,
+                                                                sample_predictions_format))
 
-                sample_predictions = self.sample_inference(placeholders, out_nodes, sess)
-                with open(self.save_dir + "results/dev_sample", "a") as out_file:
+    def inference_one(self, iterator, placeholders, out_nodes, sess):
+        """ Perform inference using a specified model checkpoint file
+        an a supplied dataset iterator """
 
-                    out_file.write("After {} batches\n{}\n{}\n".format(idx, 
-                                                                                    "="*20,
-                                                                                    sample_predictions))
-
-                accuracy, similarity = dev_stats(all_sim)
-                print("Accuracy:   {}".format(accuracy))
-                print("Similarity: {}".format(similarity))
-                print()
-
-
-    def sample_inference(self, placeholders, nodes, sess):
-        predictions = []
         Xs = []
+        all_sim = []
+        predictions = []
+
         while True:
-            sample_n_fake = self.iter_sample.next(self.batch_size)
-            
-            if sample_n_fake is None:
+            batch_n_fake = iterator.next(self.batch_size)  
+            # at the end of the dev epoch
+            if not batch_n_fake:
                 break
-            sample, n_fake = sample_n_fake
+            batch, n_fake = batch_n_fake
 
-            fd = create_feed_dict(placeholders, sample)
-            prediction, = sess.run([nodes["predictions_arpa"]], fd)
+            fd = create_feed_dict(placeholders, batch)
 
-            sample_X = sample["X"].T
+            batch_X = batch["X"].T
+            prediction, = sess.run([out_nodes["predictions_arpa"]], fd)
+            similarity_scores = evaluate(batch["Y_targ"].T, prediction)
 
             if n_fake:
                 prediction = prediction[:-n_fake]
-                sample_X = sample_X[:-n_fake]
+                batch_X = batch_X[:-n_fake]
+                similarity_scores = similarity_scores[:-n_fake]
 
+            all_sim += similarity_scores
             predictions += prediction.tolist()
-            Xs += sample_X.tolist()
+            Xs += batch_X.tolist()
 
-        self.iter_sample.reset()
+        iterator.reset()
 
-        return format_prediction(Xs,
-                            predictions,
-                            self.code_to_chars, 
-                            self.code_to_arpa)
+        return all_sim, predictions, Xs
 
     def save_hyperparams(self, filename="hyperparameters.txt"):
         hyperparams = vars(self)
@@ -473,11 +493,6 @@ def format_prediction(X, prediction, code_to_chars, code_to_arpa):
         arpa = " ".join([ar for ar in arpa_raw if "<" not in ar])
         ret += "{} - {}\n".format(spelling, arpa)
     return ret
-
-def dev_stats(similarity_scores):
-    accuracy = similarity_scores.count(1) / len(similarity_scores)
-    sim = np.mean(similarity_scores)
-    return accuracy, sim
 
 def create_feed_dict(placeholders, batch):
     
