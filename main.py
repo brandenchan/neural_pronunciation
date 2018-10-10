@@ -34,7 +34,7 @@ test_settings = {"data_dir":"data/",
                 "n_batches":10001,
                 "debug":False,
                 "print_every":100,
-                "validate_every":1000,
+                "validate_every":500,
 }
 
 if args.debug:
