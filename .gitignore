@@ -2,7 +2,7 @@
 .ipynb_checkpoints
 __pycache__
 old
-output*
+unsaved_model
 *.pyc
 .DS_Store
 data/

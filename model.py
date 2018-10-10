@@ -14,6 +14,7 @@ import numpy as np
 from data_handling import (convert_list, joint_iterator_from_file, load_maps,
                            load_symbols, convert_word)
 from evaluation import dev_stats, evaluate
+from graph import create_graph
 
 PAD_CODE = 0
 START_CODE = 1
@@ -30,7 +31,7 @@ class CharToPhonModel:
                 cell_class=LSTMCell,
                 max_gradient_norm=1,
                 learning_rate=0.001,
-                save_dir="output_1/",
+                save_dir="unsaved_model/",
                 resume_dir=None,
                 n_batches=10001,
                 debug=False,
@@ -269,8 +270,7 @@ class CharToPhonModel:
     def train(self):
         self.mode = "train"
         self.train_setup()
-        loss_track = self.train_loop()
-        pickle.dump(loss_track, open(self.save_dir + "train_loss_track.pkl", "wb"))
+        self.train_loop()
 
     def train_setup(self):
         
@@ -304,7 +304,7 @@ class CharToPhonModel:
     def train_loop(self):
 
         completed_batches = 0
-        train_loss_track = []
+        loss_track = []
 
         placeholders, out_nodes  = self.build_graph()
         saver = tf.train.Saver(max_to_keep=0)
@@ -324,24 +324,25 @@ class CharToPhonModel:
                     fd = create_feed_dict(placeholders, batch)
 
                     _, batch_loss = sess.run([out_nodes["train_op"], out_nodes["batch_loss"]], fd)
-                    train_loss_track.append(batch_loss)
+                    loss_track.append(batch_loss)
 
                     # Printing and saving
                     if completed_batches != 0:
                         epoch = (self.batch_size * completed_batches) // self.n_train_data
                         if completed_batches % self.print_every == 0:
-                            t_loss = np.mean(train_loss_track[-100:])
+                            t_loss = np.mean(loss_track[-100:])
                             print("Batch {} / {} Epoch {} train: {}".format(completed_batches, self.n_batches, epoch, t_loss))
                         if completed_batches % self.save_every == 0:
                             self.sample_inference("train_sample", placeholders, out_nodes, completed_batches, sess)
                             save_path = saver.save(sess, self.save_dir + "model.ckpt.{}".format(completed_batches))
                             print("Model saved in path: {}".format(save_path))
-        return train_loss_track
+                            pickle.dump(loss_track, open(self.save_dir + "loss_track.pkl", "wb"))
+
 
     def inference(self):
         ckpt_batch_idx = self.inference_setup()
         self.inference_loop(ckpt_batch_idx)
-        create_graph()
+        create_graph(self.save_dir)
 
     def inference_setup(self):
         self.mode = "inference"
@@ -356,11 +357,11 @@ class CharToPhonModel:
         return ckpt_batch_idx
 
     def inference_loop(self, ckpt_batch_idx):
-        iterators = {"Development": self.iter_dev,
-                     "Training": self.iter_train_slice}
-        results_filename = self.save_dir + "results/results.txt"
-        with open(results_filename, "a") as results_file:
-            results_file.write("batches\tdataset\tmetric\tvalue")
+        iterators = {"development": self.iter_dev,
+                     "training": self.iter_train_slice}
+        metrics_filename = self.save_dir + "results/metrics.txt"
+        with open(metrics_filename, "a") as metrics_file:
+            metrics_file.write("batches\tdataset\tmetric\tvalue\n")
         for idx in ckpt_batch_idx:
             print("\nVALIDATION AFTER {} BATCHES".format(idx))
             for iterator_name in iterators:
@@ -387,10 +388,12 @@ class CharToPhonModel:
                     acc_str = "{}\t{}\taccuracy\t{}\n".format(idx, iterator_name, accuracy)
                     sim_str = "{}\t{}\tsimilarity\t{}\n".format(idx, iterator_name, similarity)
 
-                    with open(results_filename) as results_file:
-                        results_file.write(acc_str)
-                        results_file.write(sim_str)
+                    with open(metrics_filename, "a") as metrics_file:
+                        metrics_file.write(acc_str)
+                        metrics_file.write(sim_str)
 
+                    if iterator_name == "training":
+                        continue
                     self.sample_inference("dev_sample", placeholders, out_nodes, idx, sess)    
 
     def sample_inference(self, filename, placeholders, out_nodes, n_batches, sess):
@@ -461,6 +464,8 @@ def check_save_dir(save_dir, resume_dir):
                 raise Exception
     else:
         os.mkdir(save_dir)
+        os.mkdir(save_dir + "results")
+
 
 def print_sample(iter_sample, code_to_chars, code_to_arpa):
     print("\nSAMPLE OF DATA\n" + "="*20 + "\n")
@@ -501,8 +506,3 @@ def create_feed_dict(placeholders, batch):
             placeholders["decoder_targets"]: batch["Y_targ"],
             placeholders["encoder_input_lengths"]: batch["len_X"],
             placeholders["decoder_lengths"]: batch["len_Y"]}
-
-
-
-if __name__ == "__main__":
-    CharToPhonModel().inference()
