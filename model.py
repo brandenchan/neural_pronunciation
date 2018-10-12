@@ -473,7 +473,7 @@ class CharToPhonModel:
 
         return all_sim, predictions, Xs
 
-    def save_hyperparams(self, filename="hyperparameters.txt"):
+    def save_hyperparams(self, filename=self.save_dir+"hyperparameters.txt"):
         hyperparams = vars(self)
         with open(self.save_dir + filename, "w") as output:
             for hp in hyperparams:
