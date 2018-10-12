@@ -342,7 +342,7 @@ class CharToPhonModel:
     def inference(self):
         ckpt_batch_idx = self.inference_setup()
         self.inference_loop(ckpt_batch_idx)
-        create_graph(self.save_dir)
+        create_graph()
 
     def inference_setup(self):
         self.mode = "inference"
@@ -473,9 +473,9 @@ class CharToPhonModel:
 
         return all_sim, predictions, Xs
 
-    def save_hyperparams(self, filename=self.save_dir+"hyperparameters.txt"):
+    def save_hyperparams(self, filename="hyperparameters.txt"):
         hyperparams = vars(self)
-        with open(self.save_dir + filename, "w") as output:
+        with open(self.save_dir + "results/" + filename, "w") as output:
             for hp in hyperparams:
                 output.write("{}: {}\n".format(hp, hyperparams[hp]))
 

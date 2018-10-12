@@ -24,14 +24,14 @@ def parse_results(filename):
     return ret
 
 
-def create_graph(save_dir="unsaved_model/"):
-    loss = pickle.load(open("{}loss_track.pkl".format(save_dir), "rb"))
+def create_graph(results_dir="unsaved_model/results/"):
+    loss = pickle.load(open("{}loss_track.pkl".format(results_dir), "rb"))
 
     plt.figure()
     fig, loss_ax = plt.subplots()
     loss_ax.plot(loss, "g", label="loss")
     stats_ax = loss_ax.twinx()
-    results = parse_results("{}results/metrics.txt".format(save_dir))
+    results = parse_results("{}metrics".format(results_dir))
     stats_ax.plot(results["development_accuracy"][0], results["development_accuracy"][1], "r", label="dev_acc")
     stats_ax.plot(results["development_similarity"][0], results["development_similarity"][1], "r", label="dev_sim")
     stats_ax.plot(results["training_accuracy"][0], results["training_accuracy"][1], "b", label="train_acc")
@@ -42,5 +42,5 @@ def create_graph(save_dir="unsaved_model/"):
 
     stats_ax.legend(handles_stats + handles_loss, labels_stats + labels_loss, loc=2)
 
-    plt.savefig("{}/results/graph".format(save_dir))
+    plt.savefig("{}/graph".format(results_dir))
     plt.close()
