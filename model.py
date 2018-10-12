@@ -336,7 +336,7 @@ class CharToPhonModel:
                             self.sample_inference("train_sample", placeholders, out_nodes, completed_batches, sess)
                             save_path = saver.save(sess, self.save_dir + "model.ckpt.{}".format(completed_batches))
                             print("Model saved in path: {}".format(save_path))
-                            pickle.dump(loss_track, open(self.save_dir + "loss_track.pkl", "wb"))
+                            pickle.dump(loss_track, open(self.save_dir + "results/loss_track.pkl", "wb"))
 
 
     def inference(self):
@@ -359,7 +359,7 @@ class CharToPhonModel:
     def inference_loop(self, ckpt_batch_idx):
         iterators = {"development": self.iter_dev,
                      "training": self.iter_train_slice}
-        metrics_filename = self.save_dir + "results/metrics.txt"
+        metrics_filename = self.save_dir + "results/metrics"
         with open(metrics_filename, "a") as metrics_file:
             metrics_file.write("batches\tdataset\tmetric\tvalue\n")
         for idx in ckpt_batch_idx:
