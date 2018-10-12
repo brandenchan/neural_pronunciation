@@ -6,4 +6,4 @@ unsaved_model
 *.pyc
 .DS_Store
 data/
-multimodel.py
+from_gcloud

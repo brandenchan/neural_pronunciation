@@ -410,6 +410,35 @@ class CharToPhonModel:
                                                                 "="*20,
                                                                 sample_predictions_format))
 
+    def test(self):
+        self.mode = "inference"
+        test_file = self.data_dir + "test"
+        self.iter_test = joint_iterator_from_file(test_file, auto_reset=False)
+        ckpt_files = [f for f in os.listdir(self.save_dir) if "model.ckpt" in f]
+        ckpt_batch_idx = sorted(set(int(f.split(".")[2]) for f in ckpt_files))
+        highest_idx = ckpt_batch_idx[-1]
+
+        ckpt_file = self.save_dir + "model.ckpt.{}".format(highest_idx)
+
+        placeholders, out_nodes = self.build_graph()
+
+        with tf.Session() as sess:
+            saver = tf.train.Saver()
+            saver.restore(sess, ckpt_file)
+            all_sim, _, _ = self.inference_one(self.iter_test,
+                                                placeholders,
+                                                out_nodes,
+                                                sess)
+
+            accuracy, similarity = dev_stats(all_sim)
+            print("Accuracy:   {}".format(accuracy))
+            print("Similarity: {}".format(similarity))
+            print()
+
+        with open(self.save_dir + "results/test", "w") as file:
+            file.write("Accuracy:   {}\n".format(accuracy))
+            file.write("Similarity: {}\n".format(similarity))
+
     def inference_one(self, iterator, placeholders, out_nodes, sess):
         """ Perform inference using a specified model checkpoint file
         an a supplied dataset iterator """

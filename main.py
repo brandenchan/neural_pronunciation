@@ -5,6 +5,8 @@ parser = argparse.ArgumentParser(
                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--inference', dest='mode', action='store_const', const="inference")
 parser.add_argument('--train', dest='mode', action='store_const', const="train")
+parser.add_argument('--test', dest='mode', action='store_const', const="test")
+
 parser.add_argument('--debug', dest='debug', action='store_true', default=False)
 args = parser.parse_args()
 
@@ -48,6 +50,8 @@ if args.mode == "train":
     m.train()
 elif args.mode == "inference":
     m.inference()
+elif args.mode == "test":
+    m.test()
 else:
     raise Exception
 
