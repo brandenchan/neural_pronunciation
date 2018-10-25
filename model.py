@@ -37,7 +37,10 @@ class CharToPhonModel:
                 debug=False,
                 print_every=50,
                 validate_every=500,
-                initializer = tf.glorot_normal_initializer
+                initializer=tf.glorot_normal_initializer,
+                beam_search=True,
+                beam_width=10,
+                attention=tf.contrib.seq2seq.LuongAttention
                 ):
 
         self.data_dir = data_dir
@@ -58,7 +61,10 @@ class CharToPhonModel:
         self.debug = debug
         self.print_every = print_every
         self.save_every = validate_every
-        self.initializer = tf.glorot_normal_initializer
+        self.initializer = initializer
+        self.beam_search = beam_search
+        self.beam_width = beam_width
+        self.attention = attention     
 
         sample_file = self.data_dir + "sample"
         self.iter_sample = joint_iterator_from_file(sample_file, auto_reset=False)
@@ -70,10 +76,11 @@ class CharToPhonModel:
 
         placeholders = self.setup_placeholders()
 
-        encoder_final_state = self.build_encoder(placeholders["encoder_inputs"],
+        encoder_outputs, encoder_final_state = self.build_encoder(placeholders["encoder_inputs"],
                                                 placeholders["encoder_input_lengths"])
 
-        logits, predictions_arpa = self.build_decoder(encoder_final_state, 
+        logits, predictions_arpa = self.build_decoder(encoder_outputs,
+                                                        encoder_final_state,
                                                         placeholders["decoder_inputs"],
                                                         placeholders["decoder_targets"],
                                                         placeholders["decoder_lengths"],
@@ -148,7 +155,6 @@ class CharToPhonModel:
                 encoder_outputs, encoder_final_state = tf.nn.dynamic_rnn(
                                             encoder_cell, encoder_input_embeddings,
                                             dtype=tf.float32, time_major=True)
-                del encoder_outputs
 
             # Bidirectional Run
             else:
@@ -176,13 +182,12 @@ class CharToPhonModel:
                     h=encoder_final_state_h
                 )
 
-                del encoder_fw_outputs
-                del encoder_bw_outputs
+                encoder_outputs = tf.concat((encoder_fw_outputs, encoder_bw_outputs), -1)
 
-            return encoder_final_state
+            return encoder_outputs, encoder_final_state
 
 
-    def build_decoder(self, encoder_final_state,
+    def build_decoder(self, encoder_outputs, encoder_final_state,
                       decoder_inputs, decoder_targets,
                       decoder_lengths, encoder_input_lengths):
 
@@ -197,11 +202,34 @@ class CharToPhonModel:
                 projection_layer = tf.layers.Dense(
                                             self.n_arpa, use_bias=False)
 
+
+            # Cell definition
             decoder_dims = self.hidden_dims
             if self.bidir:
                 decoder_dims *= 2
             decoder_cell = self.cell_class(decoder_dims)
 
+            if self.attention is not None:
+                attention_states = tf.transpose(encoder_outputs, [1, 0, 2])
+                attention_mechanism = self.attention(
+                                            decoder_dims, attention_states,
+                                            memory_sequence_length=encoder_input_lengths)
+
+                decoder_cell = tf.contrib.seq2seq.AttentionWrapper(
+                                    decoder_cell, attention_mechanism,
+                                    attention_layer_size=decoder_dims)
+
+
+
+            # Define decoder initial state
+            if self.attention is not None:
+                decoder_initial_state = decoder_cell.zero_state(self.batch_size, tf.float32).clone(
+                        cell_state=encoder_final_state)
+            else:
+                decoder_initial_state = encoder_final_state
+
+
+            # Define helper
             if self.mode == "train":
                 helper = tf.contrib.seq2seq.TrainingHelper(
                                 inputs=decoder_input_embeddings, 
@@ -209,16 +237,33 @@ class CharToPhonModel:
                                 time_major=True)
             elif self.mode == "inference":
                 start_tokens = tf.fill([self.batch_size], START_CODE)
+
                 helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
                             arpa_embeddings,
                             start_tokens,
                             END_CODE)
 
-            my_decoder = tf.contrib.seq2seq.BasicDecoder(
-                            decoder_cell,
-                            helper,
-                            encoder_final_state,
-                            output_layer=projection_layer)
+            # Define decoder
+            if self.mode == "inference" and self.beam_search:
+                decoder_initial_state = tf.contrib.seq2seq.tile_batch(encoder_final_state,
+                                                                    multiplier=self.beam_width)
+
+                my_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
+                                                    cell=decoder_cell,
+                                                    embedding=decoder_input_embeddings,
+                                                    start_tokens=start_tokens,
+                                                    end_token=END_CODE,
+                                                    initial_state=decoder_initial_state,
+                                                    beam_width=self.beam_width,
+                                                    output_layer=projection_layer,
+                                                    length_penalty_weight=0.0)
+
+            else:
+                my_decoder = tf.contrib.seq2seq.BasicDecoder(
+                                decoder_cell,
+                                helper,
+                                decoder_initial_state,
+                                output_layer=projection_layer)
 
             maximum_iterations = tf.round(tf.reduce_max(encoder_input_lengths) * 2)
 

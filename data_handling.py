@@ -8,19 +8,24 @@ END_TOKEN = "<END>"
 END_CODE = 2
 
 class JointIterator:
-    def __init__(self, iter_x, iter_y, time_major=True, auto_reset=True):
+    def __init__(self, iter_x, iter_y, time_major=True, auto_reset=True, extend_incomplete=False):
         self.iter_x = iter_x
         self.iter_y = iter_y
         assert iter_x.len == iter_y.len
         self.len = iter_x.len
         self.time_major = time_major
         self.auto_reset = auto_reset
+        self.extend_incomplete = extend_incomplete
 
     def next(self, num):
         X_raw = self.iter_x.next(num)
         Y_raw = self.iter_y.next(num)
         if not X_raw and not Y_raw:
             return None
+        if not self.extend_incomplete:
+            if len(X_raw) != num:
+                return None
+
         len_X = np.asarray([len(seq) for seq in X_raw])
         len_Y = np.asarray([len(seq) for seq in Y_raw]) - 1
         Y = pad(Y_raw)
