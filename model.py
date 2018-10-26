@@ -459,7 +459,7 @@ class CharToPhonModel:
 
     def test(self):
         self.mode = "inference"
-        test_file = self.data_dir + "test.txt"
+        test_file = self.data_dir + "test"
         self.iter_test = joint_iterator_from_file(test_file, auto_reset=False)
         ckpt_files = [f for f in os.listdir(self.save_dir) if "model.ckpt" in f]
         ckpt_batch_idx = sorted(set(int(f.split(".")[2]) for f in ckpt_files))
@@ -482,7 +482,7 @@ class CharToPhonModel:
             print("Similarity: {}".format(similarity))
             print()
 
-        with open(self.save_dir + "results/test", "w") as file:
+        with open(self.save_dir + "results/test.txt", "w") as file:
             file.write("Accuracy:   {}\n".format(accuracy))
             file.write("Similarity: {}\n".format(similarity))
 
