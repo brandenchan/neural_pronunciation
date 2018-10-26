@@ -39,7 +39,9 @@ class CharToPhonModel:
                 validate_every=500,
                 initializer=tf.glorot_normal_initializer,
                 attention=tf.contrib.seq2seq.LuongAttention,
-                dropout=0.0
+                dropout=0.0,
+                anneal_steps=1000,
+                anneal_decay=0.95
                 ):
 
         self.data_dir = data_dir
@@ -63,6 +65,8 @@ class CharToPhonModel:
         self.initializer = initializer
         self.attention = attention     
         self.dropout = dropout
+        self.anneal_steps = anneal_steps
+        self.anneal_decay = anneal_decay
 
         sample_file = self.data_dir + "sample"
         self.iter_sample = joint_iterator_from_file(sample_file, auto_reset=False)
@@ -304,8 +308,13 @@ class CharToPhonModel:
                                 gradients, self.max_gradient_norm)
 
         # Optimization
-        optimizer = tf.train.AdamOptimizer(self.learning_rate)
-        train_op = optimizer.apply_gradients(zip(clipped_gradients, params))
+
+        global_step = tf.Variable(0, trainable=False)
+        annealed_lr = tf.train.exponential_decay(self.learning_rate, global_step,
+                                                self.anneal_steps, self.anneal_decay, staircase=True)
+
+        optimizer = tf.train.AdamOptimizer(annealed_lr)
+        train_op = optimizer.apply_gradients(zip(clipped_gradients, params), global_step=global_step)
 
         return train_op
 
