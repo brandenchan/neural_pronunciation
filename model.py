@@ -338,6 +338,8 @@ class CharToPhonModel:
             print("\tBidirectional encoder")
         else:
             print("\tUnidirectional encoder")
+        if self.attention is not None:
+            print("Attention mechanism")            
         if self.debug:
             print("\tDEBUG MODE")
         n_to_process = self.n_batches * self.batch_size
