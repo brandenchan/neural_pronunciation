@@ -12,17 +12,18 @@ args = parser.parse_args()
 
 debug_settings = {"data_dir":"data/",
                 "batch_size":4,
-                "embed_dims":100,
-                "hidden_dims":100,
+                "embed_dims":200,
+                "hidden_dims":200,
                 "bidir":True,
                 "max_gradient_norm":1,
                 "learning_rate":0.001,
                 "save_dir":"unsaved_model/",
                 "resume_dir":None,
-                "n_batches":501,
+                "n_batches":1001,
                 "debug":True,
                 "print_every":10,
-                "validate_every":100}
+                "validate_every":100,
+                "dropout":0.99}
 
 test_settings = {"data_dir":"data/",
                 "batch_size":128,
