@@ -38,7 +38,7 @@ class CharToPhonModel:
                 print_every=50,
                 validate_every=500,
                 initializer=tf.glorot_normal_initializer,
-                beam_search=True,
+                beam_search=False,
                 beam_width=10,
                 attention=tf.contrib.seq2seq.LuongAttention
                 ):
@@ -339,7 +339,7 @@ class CharToPhonModel:
         else:
             print("\tUnidirectional encoder")
         if self.attention is not None:
-            print("Attention mechanism")            
+            print("\tAttention mechanism")            
         if self.debug:
             print("\tDEBUG MODE")
         n_to_process = self.n_batches * self.batch_size
