@@ -380,7 +380,7 @@ class CharToPhonModel:
                             t_loss = np.mean(loss_track[-100:])
                             print("Batch {} / {} Epoch {} train: {}".format(completed_batches, self.n_batches, epoch, t_loss))
                         if completed_batches % self.save_every == 0:
-                            self.sample_inference("train_sample", placeholders, out_nodes, completed_batches, sess)
+                            self.sample_inference("train_sample.txt", placeholders, out_nodes, completed_batches, sess)
                             save_path = saver.save(sess, self.save_dir + "model.ckpt.{}".format(completed_batches))
                             print("Model saved in path: {}".format(save_path))
                             pickle.dump(loss_track, open(self.save_dir + "results/loss_track.pkl", "wb"))
@@ -406,7 +406,7 @@ class CharToPhonModel:
     def inference_loop(self, ckpt_batch_idx):
         iterators = {"development": self.iter_dev,
                      "training": self.iter_train_slice}
-        metrics_filename = self.save_dir + "results/metrics"
+        metrics_filename = self.save_dir + "results/metrics.txt"
         with open(metrics_filename, "a") as metrics_file:
             metrics_file.write("batches\tdataset\tmetric\tvalue\n")
         for idx in ckpt_batch_idx:
@@ -441,7 +441,7 @@ class CharToPhonModel:
 
                     if iterator_name == "training":
                         continue
-                    self.sample_inference("dev_sample", placeholders, out_nodes, idx, sess)    
+                    self.sample_inference("dev_sample.txt", placeholders, out_nodes, idx, sess)    
 
     def sample_inference(self, filename, placeholders, out_nodes, n_batches, sess):
         _, sample_predictions, sample_X = self.inference_one(self.iter_sample,
@@ -459,7 +459,7 @@ class CharToPhonModel:
 
     def test(self):
         self.mode = "inference"
-        test_file = self.data_dir + "test"
+        test_file = self.data_dir + "test.txt"
         self.iter_test = joint_iterator_from_file(test_file, auto_reset=False)
         ckpt_files = [f for f in os.listdir(self.save_dir) if "model.ckpt" in f]
         ckpt_batch_idx = sorted(set(int(f.split(".")[2]) for f in ckpt_files))
