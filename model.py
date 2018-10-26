@@ -5,9 +5,9 @@ import pickle
 
 import tensorflow as tf
 try:
-    from tensorflow.nn.rnn_cell import LSTMCell, LSTMStateTuple
+    from tensorflow.nn.rnn_cell import LSTMCell, LSTMStateTuple, DropoutWrapper
 except ModuleNotFoundError:
-    from tensorflow.contrib.rnn import LSTMCell, LSTMStateTuple
+    from tensorflow.contrib.rnn import LSTMCell, LSTMStateTuple, DropoutWrapper
 import numpy as np
 
 
@@ -38,9 +38,8 @@ class CharToPhonModel:
                 print_every=50,
                 validate_every=500,
                 initializer=tf.glorot_normal_initializer,
-                beam_search=False,
-                beam_width=10,
-                attention=tf.contrib.seq2seq.LuongAttention
+                attention=tf.contrib.seq2seq.LuongAttention,
+                dropout=0.0
                 ):
 
         self.data_dir = data_dir
@@ -62,9 +61,8 @@ class CharToPhonModel:
         self.print_every = print_every
         self.save_every = validate_every
         self.initializer = initializer
-        self.beam_search = beam_search
-        self.beam_width = beam_width
         self.attention = attention     
+        self.dropout = dropout
 
         sample_file = self.data_dir + "sample"
         self.iter_sample = joint_iterator_from_file(sample_file, auto_reset=False)
@@ -152,16 +150,31 @@ class CharToPhonModel:
             # Unidirectional Run
             if not self.bidir:
                 encoder_cell = self.cell_class(self.hidden_dims)
-                encoder_outputs, encoder_final_state = tf.nn.dynamic_rnn(
-                                            encoder_cell, encoder_input_embeddings,
-                                            dtype=tf.float32, time_major=True)
+                if self.mode != "inference":
+                    encoder_cell = DropoutWrapper(encoder_cell,
+                                                    input_keep_prob=1.0-self.dropout,
+                                                    output_keep_prob=1.0-self.dropout,
+                                                    state_keep_prob=1.0-self.dropout)
+                    encoder_outputs, encoder_final_state = tf.nn.dynamic_rnn(
+                                                encoder_cell, encoder_input_embeddings,
+                                                dtype=tf.float32, time_major=True)
 
             # Bidirectional Run
             else:
                 with tf.variable_scope("fw"):
                     fw_encoder_cell = self.cell_class(self.hidden_dims)
+                    if self.mode != "inference":
+                        fw_encoder_cell = DropoutWrapper(fw_encoder_cell,
+                                                        input_keep_prob=1.0-self.dropout,
+                                                        output_keep_prob=1.0-self.dropout,
+                                                        state_keep_prob=1.0-self.dropout)
                 with tf.variable_scope("bw"):
                     bw_encoder_cell = self.cell_class(self.hidden_dims)
+                    if self.mode != "inference":
+                        bw_encoder_cell = DropoutWrapper(bw_encoder_cell,
+                                                        input_keep_prob=1.0-self.dropout,
+                                                        output_keep_prob=1.0-self.dropout,
+                                                        state_keep_prob=1.0-self.dropout)
 
                 ((encoder_fw_outputs, encoder_bw_outputs),
                 (encoder_fw_final_state, encoder_bw_final_state)) = (tf.nn.bidirectional_dynamic_rnn(cell_fw=fw_encoder_cell,
@@ -243,27 +256,11 @@ class CharToPhonModel:
                             start_tokens,
                             END_CODE)
 
-            # Define decoder
-            if self.mode == "inference" and self.beam_search:
-                decoder_initial_state = tf.contrib.seq2seq.tile_batch(encoder_final_state,
-                                                                    multiplier=self.beam_width)
-
-                my_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
-                                                    cell=decoder_cell,
-                                                    embedding=decoder_input_embeddings,
-                                                    start_tokens=start_tokens,
-                                                    end_token=END_CODE,
-                                                    initial_state=decoder_initial_state,
-                                                    beam_width=self.beam_width,
-                                                    output_layer=projection_layer,
-                                                    length_penalty_weight=0.0)
-
-            else:
-                my_decoder = tf.contrib.seq2seq.BasicDecoder(
-                                decoder_cell,
-                                helper,
-                                decoder_initial_state,
-                                output_layer=projection_layer)
+            my_decoder = tf.contrib.seq2seq.BasicDecoder(
+                            decoder_cell,
+                            helper,
+                            decoder_initial_state,
+                            output_layer=projection_layer)
 
             maximum_iterations = tf.round(tf.reduce_max(encoder_input_lengths) * 2)
 
