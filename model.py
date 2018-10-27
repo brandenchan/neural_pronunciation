@@ -159,9 +159,9 @@ class CharToPhonModel:
                                                     input_keep_prob=1.0-self.dropout,
                                                     output_keep_prob=1.0-self.dropout,
                                                     state_keep_prob=1.0-self.dropout)
-                    encoder_outputs, encoder_final_state = tf.nn.dynamic_rnn(
-                                                encoder_cell, encoder_input_embeddings,
-                                                dtype=tf.float32, time_major=True)
+                encoder_outputs, encoder_final_state = tf.nn.dynamic_rnn(
+                                            encoder_cell, encoder_input_embeddings,
+                                            dtype=tf.float32, time_major=True)
 
             # Bidirectional Run
             else:
