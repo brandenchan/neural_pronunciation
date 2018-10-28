@@ -7,6 +7,7 @@ from pprint import pprint
 
 
 def parse_results(filename):
+    """ Reads the metric.txt file. Returns a dictionary of time sequenced metrics. """
     ret = {"development_accuracy":[],
            "development_similarity":[],
            "training_accuracy":[],
@@ -25,6 +26,7 @@ def parse_results(filename):
 
 
 def create_graph(results_dir="unsaved_model/results/"):
+    """ Draws a graph of accuracy and similarity, for dev and train. Also plots train loss. """
     loss = pickle.load(open("{}loss_track.pkl".format(results_dir), "rb"))
 
     plt.figure()
