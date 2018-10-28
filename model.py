@@ -1,6 +1,6 @@
 """ Contains the CharToPhonModel class which handles the construction
 of a character level sequence to sequence model that predicts pronunciation 
-(ARPA format) from spelling """
+(ARPA format) from orthographic spelling """
 
 import os
 import pickle
@@ -539,7 +539,8 @@ class CharToPhonModel:
 
     def inference_one(self, iterator, placeholders, out_nodes, sess):
         """ Perform inference using a specified model checkpoint file
-        an a supplied dataset iterator """
+        an a supplied dataset iterator. Return similarity score of each
+        example, the predictions and the input examples. """
 
         Xs = []
         all_sim = []
@@ -558,6 +559,7 @@ class CharToPhonModel:
             prediction, = sess.run([out_nodes["predictions_arpa"]], fd)
             similarity_scores = evaluate(batch["Y_targ"].T, prediction)
 
+            # n_fake is the number of fake examples added to batch
             if n_fake:
                 prediction = prediction[:-n_fake]
                 batch_X = batch_X[:-n_fake]
@@ -572,12 +574,15 @@ class CharToPhonModel:
         return all_sim, predictions, Xs
 
     def save_hyperparams(self, filename="hyperparameters.txt"):
+        """ Write all hyperparameters to file """
         hyperparams = vars(self)
         with open(self.save_dir + "results/" + filename, "w") as output:
             for hp in hyperparams:
                 output.write("{}: {}\n".format(hp, hyperparams[hp]))
 
 def check_save_dir(save_dir, resume_dir):
+    """ Check whether the specified save directory already exists.
+    Over write this dir or not based on user input """
     if os.path.exists(save_dir):
         assert save_dir != resume_dir
         decision = input("\nDirectory {} already exists. Overwrite? [y/n]: ".format(save_dir))
@@ -595,6 +600,9 @@ def check_save_dir(save_dir, resume_dir):
 
 
 def print_sample(iter_sample, code_to_chars, code_to_arpa):
+    """ Print out the input orthographic words and
+    ARPAbet pronunciation labels of the sample set. """
+
     print("\nSAMPLE OF DATA\n" + "="*20 + "\n")
 
     sample, _ = iter_sample.next(iter_sample.len)
@@ -627,6 +635,8 @@ def format_prediction(X, prediction, code_to_chars, code_to_arpa):
     return ret
 
 def create_feed_dict(placeholders, batch):
+    """ Returns a feed dict that maps tf nodes to batch data 
+    in the form of numpy arrays """
     
     return {placeholders["encoder_inputs"]: batch["X"],
             placeholders["decoder_inputs"]: batch["Y_in"],
