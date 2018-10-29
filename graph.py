@@ -8,6 +8,7 @@ from pprint import pprint
 
 def parse_results(filename):
     """ Reads the metric.txt file. Returns a dictionary of time sequenced metrics. """
+
     ret = {"development_accuracy":[],
            "development_similarity":[],
            "training_accuracy":[],
@@ -21,7 +22,6 @@ def parse_results(filename):
             ret[category].append((int(batches), float(value)))
     for k in ret:
         ret[k] = list(zip(*ret[k]))
-        # ret[k][1] = [str(x * 100) + "%" for x in ret[k][1]]
     return ret
 
 

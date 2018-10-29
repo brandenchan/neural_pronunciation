@@ -1,6 +1,6 @@
 """ Contains the CharToPhonModel class which handles the construction
 of a character level sequence to sequence model that predicts pronunciation 
-(ARPA format) from orthographic spelling """
+(ARPA phonetic symbols) from orthographic spelling """
 
 import os
 import pickle
@@ -232,7 +232,7 @@ class CharToPhonModel:
 
         with tf.variable_scope("decoder"):
 
-            # Embeddings for arpa phonetic characters
+            # Embeddings for ARPA phonetic characters
             arpa_embeddings = tf.Variable(tf.random_uniform((self.n_arpa, self.embed_dims), -1.0, 1.0),
                                             name="arpa_embeddings")
             decoder_input_embeddings = tf.nn.embedding_lookup(arpa_embeddings, decoder_inputs)
@@ -273,7 +273,7 @@ class CharToPhonModel:
 
 
             # Define helper
-            # Input at each timestep is label arpa sequence
+            # Input at each timestep is label ARPA phonetic sequence
             if self.mode == "train":
                 helper = tf.contrib.seq2seq.TrainingHelper(
                                 inputs=decoder_input_embeddings, 
@@ -371,7 +371,7 @@ class CharToPhonModel:
         self.n_train_data = self.iter_train.len
 
         # Sample of data (time_major=True)
-        print_sample(self.iter_sample, self.code_to_chars, self.code_to_arpa)
+        print_sample_set(self.iter_sample, self.code_to_chars, self.code_to_arpa)
 
         # Print header
         print("\nTRAINING\n" + "="*20)
@@ -431,14 +431,18 @@ class CharToPhonModel:
                             pickle.dump(loss_track, open(self.save_dir + "results/loss_track.pkl", "wb"))
 
 
-    def inference(self):
-        """ Perform inference with a saved model. """
-        ckpt_batch_idx = self.inference_setup()
-        self.inference_loop(ckpt_batch_idx)
+    def validation(self):
+        """ Perform validation on the dev set with saved model checkpoints. """
+        ckpt_batch_idx = self.validation_setup()
+        self.validation_loop(ckpt_batch_idx)
         create_graph()
 
-    def inference_setup(self):
-        """ Return all the model checkpoint filenanes. Setup a dev data iterator. """
+    def validation_setup(self):
+        """ Return all the model checkpoint filenanes. Setup a dev data iterator and a train_slice
+        data iterator that is the same size as the dev set. """
+
+        print("\nVALIDATION\n" + "="*20)
+        print()
         self.mode = "inference"
         dev_file = self.data_dir + "dev"
         train_slice_file = self.data_dir + "train"
@@ -450,16 +454,18 @@ class CharToPhonModel:
         ckpt_batch_idx = sorted(set(int(f.split(".")[2]) for f in ckpt_files))
         return ckpt_batch_idx
 
-    def inference_loop(self, ckpt_batch_idx):
-        """ Perform inference with a collection of model checkpoints contained in ckpt_batch_idx.
-        Save sample inference in dev_sample.txt. Save model checkpoint performance in metrics.txt. """
+    def validation_loop(self, ckpt_batch_idx):
+        """ Perform inference on the sample set, dev set and train_slice set with a collection
+        of model checkpoints contained in ckpt_batch_idx. Save sample set inference output 
+        in dev_sample.txt. Save performance on the dev and train_slice sets in metrics.txt. """
+
         iterators = {"development": self.iter_dev,
                      "training": self.iter_train_slice}
         metrics_filename = self.save_dir + "results/metrics.txt"
         with open(metrics_filename, "a") as metrics_file:
             metrics_file.write("batches\tdataset\tmetric\tvalue\n")
         for idx in ckpt_batch_idx:
-            print("\nVALIDATION AFTER {} BATCHES".format(idx))
+            print("\nAFTER {} BATCHES\n".format(idx))
             for iterator_name in iterators:
                 print(iterator_name)
                 curr_iter = iterators[iterator_name]
@@ -471,7 +477,7 @@ class CharToPhonModel:
                 with tf.Session() as sess:
                     saver = tf.train.Saver()
                     saver.restore(sess, ckpt_file)
-                    all_sim, _, _ = self.inference_one(curr_iter,
+                    all_sim, _, _ = self.inference(curr_iter,
                                                         placeholders,
                                                         out_nodes,
                                                         sess)
@@ -493,8 +499,9 @@ class CharToPhonModel:
                     self.sample_inference("dev_sample.txt", placeholders, out_nodes, idx, sess)    
 
     def sample_inference(self, filename, placeholders, out_nodes, n_batches, sess):
-        """ Perform inference on a sample of the data. Write to file """
-        _, sample_predictions, sample_X = self.inference_one(self.iter_sample,
+        """ Perform inference on the sample set. Write predictions to file """
+
+        _, sample_predictions, sample_X = self.inference(self.iter_sample,
                                                             placeholders,
                                                             out_nodes,
                                                             sess)
@@ -508,7 +515,10 @@ class CharToPhonModel:
                                                                 sample_predictions_format))
 
     def test(self):
-        """ Writes model performance to file. Performs inference on test set """
+        """  Performs inference on test set. Writes model performance on to file."""
+
+        print("\nTEST\n" + "="*20)
+        print()
         self.mode = "inference"
         test_file = self.data_dir + "test"
         self.iter_test = joint_iterator_from_file(test_file, auto_reset=False)
@@ -523,7 +533,7 @@ class CharToPhonModel:
         with tf.Session() as sess:
             saver = tf.train.Saver()
             saver.restore(sess, ckpt_file)
-            all_sim, _, _ = self.inference_one(self.iter_test,
+            all_sim, _, _ = self.inference(self.iter_test,
                                                 placeholders,
                                                 out_nodes,
                                                 sess)
@@ -537,9 +547,9 @@ class CharToPhonModel:
             file.write("Accuracy:   {}\n".format(accuracy))
             file.write("Similarity: {}\n".format(similarity))
 
-    def inference_one(self, iterator, placeholders, out_nodes, sess):
+    def inference(self, iterator, placeholders, out_nodes, sess):
         """ Perform inference using a specified model checkpoint file
-        an a supplied dataset iterator. Return similarity score of each
+        on a supplied dataset iterator. Return similarity score of each
         example, the predictions and the input examples. """
 
         Xs = []
@@ -599,7 +609,7 @@ def check_save_dir(save_dir, resume_dir):
         os.mkdir(save_dir + "results")
 
 
-def print_sample(iter_sample, code_to_chars, code_to_arpa):
+def print_sample_set(iter_sample, code_to_chars, code_to_arpa):
     """ Print out the input orthographic words and
     ARPAbet pronunciation labels of the sample set. """
 

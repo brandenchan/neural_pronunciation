@@ -1,3 +1,6 @@
+""" Contains functions, classes and constants used to load CMU data from file
+and create custom iterators to be used by the CharToPhonModel class. """
+
 import random
 import numpy as np
 import tensorflow as tf
@@ -8,16 +11,31 @@ END_TOKEN = "<END>"
 END_CODE = 2
 
 class JointIterator:
+    """ This class iterates through two iterators simultaneously returning batches of data. """
+
     def __init__(self, iter_x, iter_y, time_major=True, auto_reset=True, extend_incomplete=False):
+        """ 
+        Args:
+            auto_reset (bool): If True, the JointInterator will start again at the
+                                beginning of the data set once it reaches the end. If
+                                False, JointIterator.next() will return None
+            extend_incomplete (bool): If True, dummy examples will be added to the batch
+                                      when there are not enough examples left in the iterator
+                                      to create a full batch. If False JointIterator.next()
+                                      will return None which will signal that it is at the
+                                      end of the data set.
+        """
+
         self.iter_x = iter_x
         self.iter_y = iter_y
         assert iter_x.len == iter_y.len
         self.len = iter_x.len
         self.time_major = time_major
-        self.auto_reset = auto_reset
+        self.auto_reset = auto_reset    
         self.extend_incomplete = extend_incomplete
 
     def next(self, num):
+        """ Return num many data examples in a dictionary """
         X_raw = self.iter_x.next(num)
         Y_raw = self.iter_y.next(num)
         if not X_raw and not Y_raw:
@@ -85,6 +103,7 @@ class DataIterator:
         self.iterator = iter(self.save)
 
 def joint_iterator_from_file(filename, auto_reset=True, time_major=True, n=None):
+    """ Return a JointIterator by specifying the name of a CMU data file """
     X, Y = load_cmu(filename)
     if n:
         X = X[:n]
@@ -94,6 +113,9 @@ def joint_iterator_from_file(filename, auto_reset=True, time_major=True, n=None)
     return JointIterator(x_iter, y_iter, time_major=time_major)
 
 def pad(seq_of_seq, pad_code=PAD_CODE):
+    """ Pad sequences in seq_of_seq with pad_code so that
+    each sequence is of the same length """
+
     lens = np.asarray([len(s) for s in seq_of_seq])
     max_len = max(lens)
     pads_required = max_len - lens
@@ -103,6 +125,10 @@ def pad(seq_of_seq, pad_code=PAD_CODE):
     return seq_of_seq
 
 def load_cmu(filename, start_end=True, encoding=True):
+    """ Load a file containing CMU pronunciation data. Returns
+    word orthographies and ARPA phonetic representations. Both 
+    are encoded as a sequence of numbers. """
+
     file = open(filename, encoding="utf-8")
     spell_to_code, _ = load_maps("data/chars")
     arpa_to_code, _ = load_maps("data/arpabet")
@@ -125,30 +151,37 @@ def load_cmu(filename, start_end=True, encoding=True):
     return convert_list(spellings, spell_to_code), convert_list(phonetics, arpa_to_code)
 
 def add_tokens(seq, start=START_TOKEN, end=END_TOKEN):
+    """ Add start and end tokens to sequence """
     ret = [start] + list(seq)
     ret.append(end)
     return ret
 
 def convert_list(list, map):
+    """ Apply an encoding map to each element in list. """
     ret = []
     for word in list:
         ret.append(convert_word(word, map))
     return ret
 
 def convert_word(word, map):
+    """ Convert word to encoding using encoding map """
     ret = []
     for ch in word:
         ret.append(map[ch])
     return ret
 
 def load_maps(sym_file):
+    """ Return encoding maps generated based on sym_file. """
     syms = load_symbols(sym_file)
     return create_map(syms)
 
 def load_symbols(filename):
+    """ Load symbols saved in file """
     return [sym[:-1] for sym in open(filename)]
 
 def create_map(symbols):
+    """ Create a symbol-to-encoding map and an
+    encoding-to-symbol map. """
     sym_to_code = {sym : i for i, sym in enumerate(symbols)}
     code_to_sym = {i : sym for i, sym in enumerate(symbols)}
     return sym_to_code, code_to_sym
