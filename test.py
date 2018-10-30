@@ -1,5 +1,4 @@
 import unittest
-# from utils import batch
 from data_handling import pad, DataIterator
 from numpy.testing import assert_array_equal
 import numpy as np
@@ -40,13 +39,3 @@ class Test(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
-
-# from utils import convert_list, load_map
-
-# ch_code, code_ch = load_map("data/chars")
-# words = ["CATS", "DOGS", "WHATEVER"]
-# new_codes = convert_list(words, ch_code)
-# new_words = convert_list(new_codes, code_ch)
-# print(new_codes)
-# print(new_words)

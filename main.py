@@ -28,10 +28,11 @@ debug_settings = {"data_dir":"data/",
                 "save_every":100,
                 "cell_class":"lstm",
                 "initializer":"glorot",
-                "attention":"luong",
+                "attention": "luong",
                 "dropout":0.0,       
                 "anneal_steps":1000,   
-                "anneal_decay":0.95 
+                "anneal_decay":0.95,
+                "layers": 2
 }
 
 test_settings = {"data_dir":"data/",
