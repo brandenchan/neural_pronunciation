@@ -64,21 +64,40 @@ Data
 
 ### (Theoretical grounding and terminology? Explain accuracy and similarity)
 
-### Installing
-### DATA
+## Setup
 
 Clone the repository. Then, in your python3 environment, install dependencies using
-
 ```
 pip install -r requirements.txt
 ```
-
-### Starting the Program
-
+Make a data folder and download the CMU Pronouncing dictionary 
 ```
-# To control a set of installed LED lights
+mkdir data
+wget http://svn.code.sf.net/p/cmusphinx/code/trunk/cmudict/cmudict-0.7b
+```
+Split the data into train, dev and test sets
+```
+python preprocessing.py -d data/cmudict-0.7b
+```
+## Usage
+
+Train the model, perform validation and test its performance
+```
 python main.py
-
-# To display an animation of the lights
-python main.py --no_lights
 ```
+Perform just one of these three actions using the ```--train```, ```--validation``` or ```--test``` flags. Adjust hyperparameters by editing ```main.py```
+
+## Output
+
+After validating, training and testing, model checkpoints are found in ```save_dir``` (defined in ```main.py```). Within ```save_dir``` there is also a ```results``` folder which contains:
+* ```hyperparameters.txt``` - a list of all the hyperparameters of the model
+* ```loss_track.pkl``` - when unpickled, it returns a list of loss values for each batch of training
+* ```train_sample.txt``` and ```dev_sample.txt``` - prediction is performed on the sample data set with each model checkpoint. The inputs and outputs are written to these files. The predictions in ```train_sample.txt``` are generated using a training decoder (c.f. ```tf.contrib.seq2seq.TrainingHelper```), meaning that at each timestep, the input is an ARPA symbol embedding from the gold standard label. By contrast, the predictions in ```dev_sample.txt``` are generated using a greedy decoder (c.f. ```tf.contrib.seq2seq.GreedyEmbeddingHelper```) such that the input at each timestep is chosen via the ARGMAX of the previous timestep's output.
+* ```metrics.txt``` - contains performance metrics of each model checkpoint on the dev data set and a slice of the train data set of the same size as the dev set. Accuracy is calculated based on how many words are predicted entirely correctly. Similarity is calculated using Python's difflib.SequenceMatcher and is the average similarity between the predicted pronunciation and the gold standard label. 
+* ```test.txt``` - contains the model's performance on the test set
+* ```graph.png``` - shows training loss, train accuracy and similarity, dev accuracy and similiarty
+
+## Future Improvements
+
+## Peculiar Phenomenon
+
