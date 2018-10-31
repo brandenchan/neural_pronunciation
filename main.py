@@ -31,8 +31,7 @@ debug_settings = {"data_dir":"data/",
                 "attention": "luong",
                 "dropout":0.0,       
                 "anneal_steps":1000,   
-                "anneal_decay":0.95,
-                "layers": 2
+                "anneal_decay":0.95
 }
 
 test_settings = {"data_dir":"data/",

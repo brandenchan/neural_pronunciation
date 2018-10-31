@@ -457,11 +457,11 @@ class CharToPhonModel:
     def validation_loop(self, ckpt_batch_idx):
         """ Perform inference on the sample set, dev set and train_slice set with a collection
         of model checkpoints contained in ckpt_batch_idx. Save sample set inference output 
-        in dev_sample.txt. Save performance on the dev and train_slice sets in metrics.txt. """
+        in dev_sample.txt. Save performance on the dev and train_slice sets in metrics.tsv. """
 
         iterators = {"development": self.iter_dev,
                      "training": self.iter_train_slice}
-        metrics_filename = self.save_dir + "results/metrics.txt"
+        metrics_filename = self.save_dir + "results/metrics.tsv"
         with open(metrics_filename, "a") as metrics_file:
             metrics_file.write("batches\tdataset\tmetric\tvalue\n")
         for idx in ckpt_batch_idx:
