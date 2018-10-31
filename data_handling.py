@@ -130,7 +130,7 @@ def load_cmu(filename, start_end=True, encoding=True):
     are encoded as a sequence of numbers. """
 
     file = open(filename, encoding="utf-8")
-    spell_to_code, _ = load_maps("data/chars")
+    spell_to_code, _ = load_maps("data/characters")
     arpa_to_code, _ = load_maps("data/arpabet")
     spellings = []
     phonetics = []

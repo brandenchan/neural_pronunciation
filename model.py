@@ -51,9 +51,9 @@ class CharToPhonModel:
 
         self.data_dir = data_dir
         self.batch_size = batch_size
-        self.n_chars = len(load_symbols(data_dir + "chars"))
+        self.n_chars = len(load_symbols(data_dir + "characters"))
         self.n_arpa = len(load_symbols(data_dir + "arpabet"))
-        _, self.code_to_chars = load_maps(data_dir + "chars")
+        _, self.code_to_chars = load_maps(data_dir + "characters")
         _, self.code_to_arpa = load_maps(data_dir + "arpabet")
         self.embed_dims = embed_dims
         self.hidden_dims = hidden_dims
@@ -619,6 +619,7 @@ def print_sample_set(iter_sample, code_to_chars, code_to_arpa):
     iter_sample.reset()
 
     X = convert_list(sample["X"].T, code_to_chars)
+    print(sample["Y_in"].T)
     Y_in = convert_list(sample["Y_in"].T, code_to_arpa)
     Y_targ = convert_list(sample["Y_targ"].T, code_to_arpa)
     for i in range(len(X)):
