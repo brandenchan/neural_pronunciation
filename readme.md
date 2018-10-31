@@ -70,14 +70,20 @@ Clone the repository. Then, in your python3 environment, install dependencies us
 ```
 pip install -r requirements.txt
 ```
-Make a data folder and download the CMU Pronouncing dictionary 
+Go to the ```data``` folder and download the CMU Pronouncing dictionary 
 ```
-mkdir data
+cd data
 wget http://svn.code.sf.net/p/cmusphinx/code/trunk/cmudict/cmudict-0.7b
 ```
+or
+```
+cd data
+curl http://svn.code.sf.net/p/cmusphinx/code/trunk/cmudict/cmudict-0.7b > cmudict-0.7b
+```
+
 Split the data into train, dev and test sets
 ```
-python preprocessing.py -d data/cmudict-0.7b
+python preprocessing.py
 ```
 ## Usage
 
@@ -86,6 +92,8 @@ Train the model, perform validation and test its performance
 python main.py
 ```
 Perform just one of these three actions using the ```--train```, ```--validation``` or ```--test``` flags. Adjust hyperparameters by editing ```main.py```
+
+???INTERACTIVE MODE???
 
 ## Output
 
