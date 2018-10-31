@@ -4,7 +4,7 @@ This is a sequence to sequence (seq2seq) model written in Tensorflow that predic
 
 e.g. TELEPHONE —> T EH1 L AH0 F OW2 N
 
-When properly trained, this model should not only learn the pronunciations contained within the dataset but also be able to generalize the rules of North American English pronunciation when making predictions on words not contained within the dataset
+When properly trained, this model should not only learn the pronunciations contained within the dataset but also be able to generalize the rules of pronunciation when making predictions on words not contained within the dataset
 
 ![seq2seq image](https://jeddy92.github.io/images/ts_intro/seq2seq_lang.png)
 
@@ -34,7 +34,6 @@ Connectionist models (in essence, neural networks) capture the kind of quasi-reg
 
 how much do neural model learning dynamics parallel the ways that humans learn (Connectionism 70s?) Beyond rule and exceptio
 Advances in modern models through DL can be applied back to the field that first invented them
-
 
 ## Model Specifications
 (Theoretical grounding and terminology? Explain accuracy and similarity)
