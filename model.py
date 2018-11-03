@@ -5,13 +5,16 @@ of a character level sequence to sequence model that predicts pronunciation
 import os
 import pickle
 import shutil
+import json
+import inspect
 from pprint import pprint
 
 import numpy as np
 import tensorflow as tf
 
 from data_handling import (convert_list, convert_word,
-                           joint_iterator_from_file, load_maps, load_symbols)
+                           joint_iterator_from_file, load_maps, load_symbols,
+                           extend_dim_zero)
 from evaluation import dev_stats, evaluate
 from graph import create_graph
 
@@ -53,8 +56,8 @@ class CharToPhonModel:
         self.batch_size = batch_size
         self.n_chars = len(load_symbols(data_dir + "characters"))
         self.n_arpa = len(load_symbols(data_dir + "arpabet"))
-        _, self.code_to_chars = load_maps(data_dir + "characters")
-        _, self.code_to_arpa = load_maps(data_dir + "arpabet")
+        self.chars_to_code, self.code_to_chars = load_maps(data_dir + "characters")
+        self.arpa_to_code, self.code_to_arpa = load_maps(data_dir + "arpabet")
         self.embed_dims = embed_dims
         self.hidden_dims = hidden_dims
         self.bidir = bidir
@@ -67,7 +70,6 @@ class CharToPhonModel:
         self.print_every = print_every
         self.save_every = save_every
         self.sample_every = save_every
-        self.initializer = initializer
         self.dropout = dropout
         self.anneal_steps = anneal_steps
         self.anneal_decay = anneal_decay
@@ -76,13 +78,19 @@ class CharToPhonModel:
         self.iter_sample = joint_iterator_from_file(sample_file, auto_reset=False)
 
         if cell_class.lower() == "lstm":
-            self.cell_class = LSTMCell
+            self.cell_class = cell_class
+            self.cell_class_fn = LSTMCell
 
         if attention.lower() == "luong":
-            self.attention = tf.contrib.seq2seq.LuongAttention     
+            self.attention = attention
+            self.attention_fn = tf.contrib.seq2seq.LuongAttention
+        else:
+            self.attention = None
+            self.attention_fn = None
 
         if initializer.lower() == "glorot":
-            self.initializer = tf.glorot_normal_initializer
+            self.initializer = initializer
+            self.initializer_fn = tf.glorot_normal_initializer
 
     def build_graph(self):
         """ Handles the construction of the tf computational graph. Returns
@@ -90,7 +98,7 @@ class CharToPhonModel:
 
         tf.reset_default_graph()
 
-        tf.get_variable_scope().set_initializer(self.initializer())
+        tf.get_variable_scope().set_initializer(self.initializer_fn())
 
         placeholders = self.setup_placeholders()
 
@@ -104,10 +112,10 @@ class CharToPhonModel:
                                                         placeholders["decoder_lengths"],
                                                         placeholders["encoder_input_lengths"])
 
-        if self.mode == "inference":
+        if self.mode in ["inference", "interactive"]:
             output_nodes = {"predictions_arpa": predictions_arpa}
 
-        if self.mode == "train":
+        elif self.mode == "train":
             losses, batch_loss = self.compute_loss(logits,
                                                     placeholders["decoder_targets"],
                                                     placeholders["decoder_lengths"])
@@ -176,7 +184,7 @@ class CharToPhonModel:
 
             # Unidirectional Run
             if not self.bidir:
-                encoder_cell = self.cell_class(self.hidden_dims)
+                encoder_cell = self.cell_class_fn(self.hidden_dims)
                 if self.mode == "training":
                     encoder_cell = DropoutWrapper(encoder_cell,
                                                     input_keep_prob=1.0-self.dropout,
@@ -189,14 +197,14 @@ class CharToPhonModel:
             # Bidirectional Run
             else:
                 with tf.variable_scope("fw"):
-                    fw_encoder_cell = self.cell_class(self.hidden_dims)
+                    fw_encoder_cell = self.cell_class_fn(self.hidden_dims)
                     if self.mode == "training":
                         fw_encoder_cell = DropoutWrapper(fw_encoder_cell,
                                                         input_keep_prob=1.0-self.dropout,
                                                         output_keep_prob=1.0-self.dropout,
                                                         state_keep_prob=1.0-self.dropout)
                 with tf.variable_scope("bw"):
-                    bw_encoder_cell = self.cell_class(self.hidden_dims)
+                    bw_encoder_cell = self.cell_class_fn(self.hidden_dims)
                     if self.mode == "training":
                         bw_encoder_cell = DropoutWrapper(bw_encoder_cell,
                                                         input_keep_prob=1.0-self.dropout,
@@ -246,7 +254,7 @@ class CharToPhonModel:
             decoder_dims = self.hidden_dims
             if self.bidir:
                 decoder_dims *= 2
-            decoder_cell = self.cell_class(decoder_dims)
+            decoder_cell = self.cell_class_fn(decoder_dims)
             if self.mode == "training":
                 decoder_cell = DropoutWrapper(decoder_cell,
                                                 input_keep_prob=1.0-self.dropout,
@@ -254,9 +262,9 @@ class CharToPhonModel:
                                                 state_keep_prob=1.0-self.dropout)
 
             # Attention wrapper
-            if self.attention is not None:
+            if self.attention_fn is not None:
                 attention_states = tf.transpose(encoder_outputs, [1, 0, 2])
-                attention_mechanism = self.attention(
+                attention_mechanism = self.attention_fn(
                                             decoder_dims, attention_states,
                                             memory_sequence_length=encoder_input_lengths)
 
@@ -265,7 +273,7 @@ class CharToPhonModel:
                                     attention_layer_size=decoder_dims)
 
             # Define decoder initial state
-            if self.attention is not None:
+            if self.attention_fn is not None:
                 decoder_initial_state = decoder_cell.zero_state(self.batch_size, tf.float32).clone(
                         cell_state=encoder_final_state)
             else:
@@ -280,7 +288,7 @@ class CharToPhonModel:
                                 sequence_length=decoder_lengths,
                                 time_major=True)
             # Inference argmax predictions are inputs to the next timestep
-            elif self.mode == "inference":
+            elif self.mode in ["inference", "interactive"]:
                 start_tokens = tf.fill([self.batch_size], START_CODE)
                 helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
                             arpa_embeddings,
@@ -379,7 +387,7 @@ class CharToPhonModel:
             print("\tBidirectional encoder")
         else:
             print("\tUnidirectional encoder")
-        if self.attention is not None:
+        if self.attention_fn is not None:
             print("\tAttention mechanism")            
         if self.debug:
             print("\tDEBUG MODE")
@@ -400,10 +408,6 @@ class CharToPhonModel:
 
         with tf.Session() as sess:
 
-                # Restore or initialize variables 
-                # if self.resume_dir:
-                #     saver.restore(sess, self.resume_dir + "model.ckpt")
-                # else:
                 sess.run(tf.global_variables_initializer())
                     
                 for completed_batches in range(self.n_batches):
@@ -522,6 +526,8 @@ class CharToPhonModel:
         self.mode = "inference"
         test_file = self.data_dir + "test"
         self.iter_test = joint_iterator_from_file(test_file, auto_reset=False)
+
+        # Find latest checkpoint
         ckpt_files = [f for f in os.listdir(self.save_dir) if "model.ckpt" in f]
         ckpt_batch_idx = sorted(set(int(f.split(".")[2]) for f in ckpt_files))
         highest_idx = ckpt_batch_idx[-1]
@@ -583,12 +589,46 @@ class CharToPhonModel:
 
         return all_sim, predictions, Xs
 
-    def save_hyperparams(self, filename="hyperparameters.txt"):
+    def interactive(self):
+        """ Loads saved model. Takes user input and returns model prediction. """
+
+        self.mode = "interactive"
+        placeholders, output_nodes = self.build_graph()
+        saver = tf.train.Saver()     
+        
+        # Find latest checkpoint
+        ckpt_files = [f for f in os.listdir(self.save_dir) if "model.ckpt" in f]
+        ckpt_batch_idx = sorted(set(int(f.split(".")[2]) for f in ckpt_files))
+        highest_idx = ckpt_batch_idx[-1]
+        ckpt_file = self.save_dir + "model.ckpt.{}".format(highest_idx)   
+
+        with tf.Session() as sess:
+            saver.restore(sess, ckpt_file)
+            while True:
+                user_input = input("Type a word to predict: ")
+                try:
+                    single_X = convert_list([user_input.upper()], self.chars_to_code)
+                except KeyError:
+                    print("INVALID INPUT CHARACTERS")
+                X = np.zeros((self.batch_size, len(user_input)))
+                X[0, :] = np.asarray(single_X)
+                X_len = np.ones((self.batch_size))
+                X_len[0] = len(user_input)
+                fd = {placeholders["encoder_inputs"]: X.T,
+                      placeholders["encoder_input_lengths"]: X_len}
+                prediction, = sess.run([output_nodes["predictions_arpa"]], fd)
+                arpa_list = convert_word(prediction[0], self.code_to_arpa)
+                print(" ".join(arpa_list))
+
+    def save_hyperparams(self, filename="hyperparameters.json"):
         """ Write all hyperparameters to file """
+        expected_args = inspect.getargspec(self.__init__).args
         hyperparams = vars(self)
-        with open(self.save_dir + "results/" + filename, "w") as output:
-            for hp in hyperparams:
-                output.write("{}: {}\n".format(hp, hyperparams[hp]))
+        ret = {hp: hyperparams[hp] for hp in hyperparams if hp in expected_args}
+        out_filename = self.save_dir + "results/" + filename
+        with open(out_filename, "w") as outfile:
+            json.dump(ret, outfile, sort_keys=True, indent=4)
+
 
 def check_save_dir(save_dir, resume_dir):
     """ Check whether the specified save directory already exists.

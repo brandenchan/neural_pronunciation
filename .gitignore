@@ -5,5 +5,7 @@ old
 unsaved_model
 *.pyc
 .DS_Store
-data/
+data/*
+!data/preprocessing.py
 from_gcloud
+.gitignore

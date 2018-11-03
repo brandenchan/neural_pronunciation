@@ -90,7 +90,7 @@ Perform just one of these three actions using the ```--train```, ```--validation
 ## Output
 
 After validating, training and testing, model checkpoints are found in ```save_dir``` (defined in ```main.py```). Within ```save_dir``` there is also a ```results``` folder which contains:
-* ```hyperparameters.txt``` - a list of all the hyperparameters of the model
+* ```hyperparameters.json``` - stores model hyperparameters that can be used to initialize a new CharToPhonModel
 * ```loss_track.pkl``` - when unpickled, it returns a list of loss values for each batch of training
 * ```train_sample.txt``` and ```dev_sample.txt``` - prediction is performed on the sample data set with each model checkpoint. The inputs and outputs are written to these files. The predictions in ```train_sample.txt``` are generated using a training decoder (c.f. ```tf.contrib.seq2seq.TrainingHelper```), meaning that at each timestep, the input is an ARPA symbol embedding from the gold standard label. By contrast, the predictions in ```dev_sample.txt``` are generated using a greedy decoder (c.f. ```tf.contrib.seq2seq.GreedyEmbeddingHelper```) such that the input at each timestep is chosen via the ARGMAX of the previous timestep's output.
 * ```metrics.txt``` - contains performance metrics of each model checkpoint on the dev data set and a slice of the train data set of the same size as the dev set. Accuracy is calculated based on how many words are predicted entirely correctly. Similarity is calculated using Python's difflib.SequenceMatcher and is the average similarity between the predicted pronunciation and the gold standard label. 
