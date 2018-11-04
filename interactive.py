@@ -19,19 +19,3 @@ settings = json.load(open(hyperparams_file))
 
 m = CharToPhonModel(**settings)
 m.interactive()
-
-print("OK")
-
-# if args.mode == "train":
-#     m.train()
-# elif args.mode == "validation":
-#     m.validation()
-# elif args.mode == "test":
-#     m.test()
-# elif args.mode == "all":
-#     m.train()
-#     m.validation()
-#     m.test()
-# else:
-#     raise Exception
-
