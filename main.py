@@ -15,9 +15,9 @@ args = parser.parse_args()
 
 debug_settings = {"data_dir":"data/",
                 "batch_size":4,
-                "embed_dims":200,
-                "hidden_dims":200,
-                "bidir":False,
+                "embed_dims":50,
+                "hidden_dims":50,
+                "bidir":True,
                 "max_gradient_norm":1,
                 "learning_rate":0.001,
                 "save_dir":"unsaved_model/",
@@ -30,7 +30,7 @@ debug_settings = {"data_dir":"data/",
                 "initializer":"glorot",
                 "attention": "luong",
                 "dropout":0.0,       
-                "anneal_steps":1000,   
+                "anneal_steps":100,   
                 "anneal_decay":0.95
 }
 
@@ -47,6 +47,8 @@ test_settings = {"data_dir":"data/",
                 "debug":False,
                 "print_every":100,
                 "save_every":500,
+                "anneal_steps":1000,
+                "anneal_decay":0.95
 }
 
 if args.debug:
