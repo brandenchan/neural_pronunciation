@@ -112,7 +112,7 @@ class CharToPhonModel:
                                                         placeholders["decoder_lengths"],
                                                         placeholders["encoder_input_lengths"])
 
-        if self.mode in ["inference", "interactive"]:
+        if self.mode == "inference":
             output_nodes = {"predictions_arpa": predictions_arpa}
 
         elif self.mode == "train":
@@ -288,7 +288,7 @@ class CharToPhonModel:
                                 sequence_length=decoder_lengths,
                                 time_major=True)
             # Inference argmax predictions are inputs to the next timestep
-            elif self.mode in ["inference", "interactive"]:
+            elif self.mode == "inference":
                 start_tokens = tf.fill([self.batch_size], START_CODE)
                 helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
                             arpa_embeddings,
@@ -592,7 +592,7 @@ class CharToPhonModel:
     def interactive(self):
         """ Loads saved model. Takes user input and returns model prediction. """
 
-        self.mode = "interactive"
+        self.mode = "inference"
         placeholders, output_nodes = self.build_graph()
         saver = tf.train.Saver()     
         
@@ -600,10 +600,11 @@ class CharToPhonModel:
         ckpt_files = [f for f in os.listdir(self.save_dir) if "model.ckpt" in f]
         ckpt_batch_idx = sorted(set(int(f.split(".")[2]) for f in ckpt_files))
         highest_idx = ckpt_batch_idx[-1]
-        ckpt_file = self.save_dir + "model.ckpt.{}".format(highest_idx)   
+        ckpt_file = self.save_dir + "model.ckpt.{}".format(highest_idx)
 
         with tf.Session() as sess:
             saver.restore(sess, ckpt_file)
+            print("\nModel loaded successfully from {}\n".format(ckpt_file))   
             while True:
                 user_input = input("Type a word to predict: ")
                 try:
@@ -618,7 +619,8 @@ class CharToPhonModel:
                       placeholders["encoder_input_lengths"]: X_len}
                 prediction, = sess.run([output_nodes["predictions_arpa"]], fd)
                 arpa_list = convert_word(prediction[0], self.code_to_arpa)
-                print(" ".join(arpa_list))
+                prediction_arpa = " ".join(arpa_list)
+                print("Predicted pronunciation: {}\n".format(prediction_arpa))
 
     def save_hyperparams(self, filename="hyperparameters.json"):
         """ Write all hyperparameters to file """
